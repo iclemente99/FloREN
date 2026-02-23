@@ -306,14 +306,14 @@ try:
     #
     #colors = {"MS": "red", "PT": "blue"}
     labels_np = np.array(labels)
-    #unique_groups = np.unique(labels_np)
-    #cmap = cm.get_cmap("tab10", len(unique_groups))
-    #colors = {
-    #    group: cmap(i)
-    #    for i, group in enumerate(unique_groups)
-    #}
+    unique_groups = np.unique(labels_np)
+    cmap = cm.get_cmap("tab10", len(unique_groups))
+    colors = {
+        group: cmap(i)
+        for i, group in enumerate(unique_groups)
+    }
     #
-    colors = {"SLE": "red", "HD": "blue"}
+    #colors = {"SLE": "red", "HD": "blue"}
     # Generate plots
     for idx, (title, vectors) in enumerate(plot_order):
         if idx >= len(axes):  # Prevent overflow if plot_order < 10
