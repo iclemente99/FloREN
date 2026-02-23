@@ -72,8 +72,8 @@ parser = argparse.ArgumentParser(description='Training GNN on gene cell graph')
 
 # Sampling times
 parser.add_argument('--n_batch', type=int, default=25, help='Number of batch (sampled graphs) for each epoch')
-parser.add_argument('--cell_rate', type=float, default=0.9)
-parser.add_argument('--gene_rate', type=float, default=0.3)
+parser.add_argument('--cell_rate', type=float, default=0.1)
+parser.add_argument('--gene_rate', type=float, default=0.1)
 
 # Result
 parser.add_argument('--data_name', type=str, default='FloREN', help='The name for dataset')
@@ -81,7 +81,7 @@ parser.add_argument('--reduction', type=str, default='AE', help='the method for 
 parser.add_argument('--in_dim', type=int, default=256, help='Number of hidden dimension (AE)')
 parser.add_argument('--floren_grn', type=str, default='True', help='Decide if to run the floren published gene-gene connections inference')
 
-# GAE
+# HGTGSSL
 parser.add_argument('--epoch', type=int, default=100)
 parser.add_argument('--n_hid', type=int, default=128, help='Number of hidden dimension')
 parser.add_argument('--n_heads', type=int, default=8 ,help='Number of attention head')
@@ -98,6 +98,9 @@ parser.add_argument('--cuda', type=int, default=1, help='cuda 0 use GPU0 else cp
 parser.add_argument('--rep', type=str, default='T', help='precision truncation')
 parser.add_argument('--AEtype', type=int, default=1, help='AEtype:1 embedding node autoencoder 2:HGT node autoencode')
 parser.add_argument('--optimizer', type=str, default='adamw', help='optimizer')
+parser.add_argument('--test_size', type=int, default=0.2, help='Size of test during training')
+parser.add_argument('--val_size', type=float, default=0.2, help='Size of validation during training')
+parser.add_argument('--patience', type=float, default=30, help='patience for early stopping')
 
 # Data directories
 parser.add_argument('--data_path', default='~/data', type=str, help='Path to folder with graph construction outputs')
@@ -213,7 +216,7 @@ for file_idx, patient_name in enumerate(files):
         transformed_matrix = pd.read_csv(load_file)
         transformed_matrix = transformed_matrix.iloc[:, 1:].values
         gene_cell = transformed_matrix
-        gene_cell[gene_cell > 0] = 1
+        gene_cell[gene_cell >= 0.5] = 1
         # gene_cell[gene_cell <= 5] = 0
     else:
         cells_files = pd.read_csv(os.path.join(cell_embeddings_norm_path, f"{patient_name}_AE_Emb_Cells.csv"))
@@ -358,7 +361,7 @@ def stratified_split_graphs(patient_graphs, metadata_df, test_size=0.15, val_siz
 
 
 train_graphs, val_graphs, test_graphs = stratified_split_graphs(
-    patient_graphs, metadata, test_size=0.2, val_size=0.2
+    patient_graphs, metadata, test_size=args.test_size, val_size=args.val_size
 )
 
 print("Sampling end!")
@@ -420,7 +423,7 @@ weight_classification = 0.9
 #contrastive_patience = 0
 #best_contrastive = float('inf')
 
-patience = 30  # patience for early stopping (validation)
+patience = args.patience  # patience for early stopping (validation)
 counter = 0
 best_model_loss = float('inf')
 best_model_state = None
@@ -441,8 +444,8 @@ contrastive_losses = []
 classification_losses = []
 total_losses = []
 
-args.gene_rate = 0.1
-args.cell_rate = 0.1
+#args.gene_rate = 0.1
+#args.cell_rate = 0.1
 
 # Set random seed for reproducibility
 random_seed = 42
@@ -466,19 +469,14 @@ def pregenerate_jobs(graphs, csv_files, gene_rate, cell_rate, device):
         jobs = []
         gene_num = int(gene_cell.shape[0] * gene_rate)
         cell_num = int(gene_cell.shape[1] * cell_rate)
-        jobs.append(
-            #sub_sample(graph, gene_cell, int(gene_cell.shape[1]*0.5), int(gene_cell.shape[0]*0.5), gene_cell.shape[0], gene_cell.shape[1],
-            #           query=True)
-            sub_sample(graph, gene_cell, gene_cell.shape[1], gene_cell.shape[0], gene_cell.shape[0], gene_cell.shape[1],
-                       query=True)
-            )
+        jobs.append(sub_sample(graph, gene_cell, gene_cell.shape[1], gene_cell.shape[0], gene_cell.shape[0], gene_cell.shape[1], query=True))
         jobs.append(sub_sample(graph, gene_cell, cell_num, gene_num, gene_cell.shape[0], gene_cell.shape[1]))
         jobs.append(sub_sample(graph, gene_cell, cell_num, gene_num, gene_cell.shape[0], gene_cell.shape[1]))
         #
         # Format jobs into gnn_input tensors
         formatted_jobs = []
         for job in jobs:
-            feature, time_info, edge_list, indxs = job
+            feature, time_info, edge_list, indxs, og_gene_indxs, og_cell_indxs = job
             node_dict = {}
             node_feature = []
             node_type = []
@@ -486,7 +484,7 @@ def pregenerate_jobs(graphs, csv_files, gene_rate, cell_rate, device):
             edge_index = []
             edge_type = []
             edge_time = []
-            #
+            #print(f"Jobs: edge_index - {edge_index}")
             node_num = 0
             types = graph.get_types()
             for t in types:
@@ -494,14 +492,19 @@ def pregenerate_jobs(graphs, csv_files, gene_rate, cell_rate, device):
                 node_num += len(feature[t])
             #
             for t in types:
+                #t_i = node_dict[t][1]
+                #node_feature.append(torch.tensor(feature[t], dtype=torch.float32).to(device))
+                #node_time += list(time_info[t])
+                #node_type += [node_dict[t][1] for _ in range(len(feature[t]))]
                 t_i = node_dict[t][1]
-                node_feature.append(torch.tensor(feature[t], dtype=torch.float32).to(device))
-                node_time += list(time_info[t])
-                node_type += [node_dict[t][1] for _ in range(len(feature[t]))]
+                node_feature.insert(t_i, torch.tensor(feature[t], dtype=torch.float32).to(device))  # Saves cells or genes matrices
+                node_time += list(time_info[t])  # Saves node time
+                node_type += [node_dict[t][1] for _ in range(len(feature[t]))]  # Saves node type
             #
             edge_dict = {e[2]: i for i, e in enumerate(graph.get_meta_graph())}
             edge_dict['self'] = len(edge_dict)
-            #
+            #if formatted_jobs == []:
+            #    print(edge_dict)
             for target_type in edge_list:
                 for source_type in edge_list[target_type]:
                     for relation_type in edge_list[target_type][source_type]:
@@ -512,16 +515,19 @@ def pregenerate_jobs(graphs, csv_files, gene_rate, cell_rate, device):
                             edge_type.append(edge_dict.get(relation_type, 0))
                             edge_time.append(120)
             #
-            node_feature = torch.cat(tuple(node_feature), 0).to(device)
+            #node_feature = torch.cat(tuple(node_feature), 0).to(device)
+            node_feature = torch.cat((node_feature[0], node_feature[1]), 0)
             node_type = torch.LongTensor(node_type).to(device)
             edge_time = torch.LongTensor(edge_time).to(device)
             edge_index = torch.LongTensor(edge_index).t().to(device)
             edge_type = torch.LongTensor(edge_type).to(device)
-            formatted_jobs.append([node_feature, node_type, edge_time, edge_index, edge_type])
-            #
+            #print(f"Jobs: edge_index - {edge_index.max()}")
+            formatted_jobs.append([node_feature, node_type, edge_time, edge_index, edge_type, og_gene_indxs, og_cell_indxs])
+        #
         jobs_dict[patient_name] = formatted_jobs
+    #
+    print(edge_dict)
     return jobs_dict
-
 
 # Generate and format jobs
 print("Pre-generating and formatting jobs...")
@@ -799,115 +805,67 @@ all_jobs = {**train_jobs, **val_jobs, **test_jobs}  # Combine train_jobs and val
 for patient in all_graphs:
     patient_name = patient['name']
     print(f"Processing patient: {patient_name}")
-    #
     # Get pre-formatted job for full graph
-    # gnn_input = all_jobs[patient_name][0]  # Use first job (full graph)
+    #gnn_input = all_jobs[patient_name][0]  # Use first job (full graph)
     gnn_input = all_jobs[patient_name]
     edge_index = gnn_input[0][3]  # Save edge_index for attention scores
-    #
     # Run GNN with full graph inputs repeated three times (mimicking training)
     with torch.no_grad():
-        # First forward pass
-        # logits, ret_class = gnn.forward(
-        #    gnn_input[0], gnn_input[1], gnn_input[2], gnn_input[3], gnn_input[4],
-        #    gnn_input[0], gnn_input[1], gnn_input[2], gnn_input[3], gnn_input[4],
-        #    gnn_input[0], gnn_input[1], gnn_input[2], gnn_input[3], gnn_input[4]
-        # )
+        # Forward pass
         logits, ret_class = gnn.forward(
             gnn_input[0][0], gnn_input[0][1], gnn_input[0][2], gnn_input[0][3], gnn_input[0][4],
             gnn_input[1][0], gnn_input[1][1], gnn_input[1][2], gnn_input[1][3], gnn_input[1][4],
             gnn_input[2][0], gnn_input[2][1], gnn_input[2][2], gnn_input[2][3], gnn_input[2][4]
         )
-        # cells_1 = gnn.cells_1.cpu().numpy()  # [N, 104]
-        # genes_1 = gnn.genes_1.cpu().numpy()  # [M, 104]
-        # att_1 = gnn.att_1.cpu().numpy()      # [E, 13]
-        #
-        # Second forward pass (same inputs for consistency)
-        # logits, ret_class = gnn.forward(
-        #    gnn_input[0], gnn_input[1], gnn_input[2], gnn_input[3], gnn_input[4],
-        #    gnn_input[0], gnn_input[1], gnn_input[2], gnn_input[3], gnn_input[4],
-        #    gnn_input[0], gnn_input[1], gnn_input[2], gnn_input[3], gnn_input[4]
-        # )
-        # cells_2 = gnn.cells_2.cpu().numpy()  # [N, 104]
-        # genes_2 = gnn.genes_2.cpu().numpy()  # [M, 104]
-        # att_2 = gnn.att_2.cpu().numpy()      # [E, 13]
-        #
+        # Extract results
+        att_full = gnn.att_0.abs() + gnn.att_n.abs()
+        att_final = (att_full/2).mean(axis=1)
+        cell_embs = (gnn.cells_0 + gnn.cells_n)/2
+        gene_embs = (gnn.genes_0 + gnn.genes_n)/2
         # Patient embeddings
         emb_104 = gnn.emb_104.cpu().numpy()  # [104]
-        g_32 = gnn.g_32.cpu().numpy()  # [32]
-        l_32 = gnn.l_32.cpu().numpy()  # [32]
-        g_64 = gnn.g_64.cpu().numpy()  # [64]
-        l_64 = gnn.l_64.cpu().numpy()  # [64]
-        g_128 = gnn.g_128.cpu().numpy()  # [128]
-        l_128 = gnn.l_128.cpu().numpy()  # [128]
-    #
-    # Compute mean embeddings
-    # cell_embedding = (cells_1 + cells_2) / 2  # [N, 104]
-    # gene_embedding = (genes_1 + genes_2) / 2  # [M, 104]
-    # att_embedding = (att_1 + att_2) / 2       # [E, 13]
-    # att_score = att_embedding.mean(axis=1, keepdims=True)  # [E, 1]
+        g_32 = gnn.g_32.cpu().numpy()        # [32]
+        l_32 = gnn.l_32.cpu().numpy()        # [32]
+        g_64 = gnn.g_64.cpu().numpy()        # [64]
+        l_64 = gnn.l_64.cpu().numpy()        # [64]
+        g_128 = gnn.g_128.cpu().numpy()      # [128]
+        l_128 = gnn.l_128.cpu().numpy()      # [128]
     #
     # Prepare patient embedding
     patient_embedding = np.concatenate([emb_104, g_32, l_32, g_64, l_64, g_128, l_128, ret_class], axis=0)  # [552]
-    #
     # Save results
     file_name = f'sample_{patient_name}_epoch_{args.epoch}_n_hid_{args.n_hid}_nheads_{args.n_heads}_lr_01_n_batch{args.n_batch}'
-    #
+    # Save edge atts
+    positions = pd.DataFrame(gnn_input[0][3].T)
+    df = pd.DataFrame(att_final)
+    df2 = pd.concat([positions, df], axis=1)
+    df2.to_csv(os.path.join(att_dir, f"{patient_name}_edge_att.csv"), sep=",", index=True)
     # Save cell embeddings
-    # np.savetxt(os.path.join(cell_dir, f"{file_name}.csv"), cell_embedding, delimiter=",")
-    #
+    np.savetxt(os.path.join(cell_dir, f"{patient_name}_cell_embs.csv"), cell_embs, delimiter=",")
     # Save gene embeddings
-    # np.savetxt(os.path.join(gene_dir, f"{file_name}.csv"), gene_embedding, delimiter=",")
-    #
-    # Save attention scores with edge indices
-    # positions = edge_index.cpu().numpy().T  # [E, 2]
-    # att_df = pd.DataFrame(np.concatenate([positions, att_score], axis=1), columns=['source', 'target', 'att_score'])
-    # att_df.to_csv(os.path.join(att_dir, f"{file_name}.csv"), index=False)
-    #
-    # Save patient embeddings
-    np.savetxt(os.path.join(patient_emb_dir, f"{file_name}.csv"), patient_embedding, delimiter=",")
-
-print("Saved embeddings and attention scores for all patients")
-
-
-
-
-
-################################################################
-#
-# SAVE INTERPRETABILITY SCORES
-#
-################################################################
-
-for patient in all_graphs:
-    patient_name = patient['name']
-    print(f"Processing patient: {patient_name}")
-    #
-    # Get pre-formatted job for full graph
-    # gnn_input = all_jobs[patient_name][0]  # Use first job (full graph)
-    gnn_input = all_jobs[patient_name]
-    # edge_index = gnn_input[0][3]  # Save edge_index for attention scores
-    #
-    # Run GNN with full graph inputs repeated three times (mimicking training)
-    gnn.eval()
-    x = gnn_input[0][0].clone().detach().to(device)
-    x.requires_grad = True
-    logits, ret_class = gnn.forward(
-        x, gnn_input[0][1], gnn_input[0][2], gnn_input[0][3], gnn_input[0][4],
-        gnn_input[1][0], gnn_input[1][1], gnn_input[1][2], gnn_input[1][3], gnn_input[1][4],
-        gnn_input[2][0], gnn_input[2][1], gnn_input[2][2], gnn_input[2][3], gnn_input[2][4]
-    )
-    target = logits.mean() + ret_class.mean()
-    gnn.zero_grad()
-    target.backward()
-    saliency = x.grad.abs().cpu().numpy()
+    np.savetxt(os.path.join(gene_dir, f"{patient_name}_gene_embs.csv"), gene_embs, delimiter=",")
+    # Save node attentions
+    num_nodes = gnn_input[0][0].shape[0]
+    node_attention = np.zeros(num_nodes, dtype=np.float64)
+    np.add.at(node_attention, df2.iloc[:, 0].values, df2.iloc[:, 2].values)
+    np.add.at(node_attention, df2.iloc[:, 1].values, df2.iloc[:, 2].values)
     num_genes = n_genes
-    # num_cells = cells_1.shape[0]
-    genes_grad = saliency[:num_genes, :]  # (num_genes, in_dim)
-    cells_grad = saliency[num_genes:, :]  # (num_cells, in_dim)
+    genes_grad = node_attention[:num_genes]  # (num_genes, in_dim)
+    cells_grad = node_attention[num_genes:]  # (num_cells, in_dim)
     patient_out = os.path.join(inter_dir, patient_name)
     os.makedirs(patient_out, exist_ok=True)
-    np.savetxt(os.path.join(patient_out, "genes_gradients.csv"), genes_grad, delimiter=",")
-    np.savetxt(os.path.join(patient_out, "cells_gradients.csv"), cells_grad, delimiter=",")
+    np.savetxt(os.path.join(patient_out, "genes_atts.csv"), genes_grad, delimiter=",")
+    np.savetxt(os.path.join(patient_out, "cells_atts.csv"), cells_grad, delimiter=",")
+    # Save patient embeddings
+    np.savetxt(os.path.join(patient_emb_dir_split, f"{patient_name}_emb_ssl.csv"), emb_104, delimiter=",")
+    np.savetxt(os.path.join(patient_emb_dir_split, f"{patient_name}_emb_g32.csv"), g_32, delimiter=",")
+    np.savetxt(os.path.join(patient_emb_dir_split, f"{patient_name}_emb_l32.csv"), l_32, delimiter=",")
+    np.savetxt(os.path.join(patient_emb_dir_split, f"{patient_name}_emb_g64.csv"), g_64, delimiter=",")
+    np.savetxt(os.path.join(patient_emb_dir_split, f"{patient_name}_emb_l64.csv"), l_64, delimiter=",")
+    np.savetxt(os.path.join(patient_emb_dir_split, f"{patient_name}_emb_g128.csv"), g_128, delimiter=",")
+    np.savetxt(os.path.join(patient_emb_dir_split, f"{patient_name}_emb_l128.csv"), l_128, delimiter=",")
+    np.savetxt(os.path.join(patient_emb_dir_split, f"{patient_name}_emb_class.csv"), ret_class, delimiter=",")
+    # Save patient embeddings
+    #np.savetxt(os.path.join(patient_emb_dir, f"{file_name}.csv"), patient_embedding, delimiter=",")
 
-print(f"Saved gradients for {patient_name}")
+print("Saved embeddings and attention scores for all patients")
