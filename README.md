@@ -17,17 +17,23 @@ git clone https://github.com/iclemente99/FloREN
 
 ### 2. HGT Environment
 
+OPTION 1 - Create conda HGT environment
+
 ```bash
 
-# OPTION 1 - Create conda HGT environment
-conda env create -f environment/hgt_env.yml
+conda env create -f env/hgt_env.yml
 conda activate hgt_env
 
-# OPTION 2 - Create uv HGT environment
+```
+
+OPTION 2 - Create uv HGT environment
+
+```bash
+
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv venv hgt_env
 source hgt_env/bin/activate
-uv pip install environment/hgt_env.txt
+uv pip install env/hgt_env.txt
 
 ```
 
