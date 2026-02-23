@@ -94,7 +94,8 @@ To run the FloREN pipeline, the input data must be organized in the `./data/` di
 
 # Run floren_input.py function
 python src/floren_input.py \
-  --data_path './data/' \
+  --data_path './data/count_matrices/' \
+  --cell_comm_path './data/cell_connections/' \
   --output_path './floren_output/' \
   --epochs 150
   --grn_cutoff 0.9
@@ -107,9 +108,9 @@ python src/floren_input.py \
 
 # Run floren_training.py
 python src/floren_hgt.py
-  --data_path './data/'
+  --data_path './data/count_matrices/'
   --result_dir './floren_output/'
-  --metadata_path './samples_metadata.csv/'
+  --metadata_path './data/samples_metadata.csv/'
   --epcoh 100
 
 ```
@@ -120,9 +121,9 @@ python src/floren_hgt.py
 
 # Run floren_visualization.py
 python src/floren_visualization.py
-  --data_path './data/'
+  --data_path './data/count_matrices/'
   --result_dir './floren_output/'
-  --metadata_path './samples_metadata.csv/'
+  --metadata_path './data/samples_metadata.csv/'
   --epcoh 100
 
 ```
