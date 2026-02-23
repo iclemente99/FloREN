@@ -333,8 +333,8 @@ debuginfoStr('Global normalization finished')
 # ---------------------------------------------------------------
 
 # Load prior knowledge
-# PK8_PRECIESADS = pd.read_csv(os.path.join(data_path, "Prior_Knowledge_PRECISEADS.csv"))
-PK8_PRECIESADS = pd.read_csv("C:/Users/Inigo/Documents/Prior_Knowledge_PRECISEADS.csv")
+PK8_PRECIESADS = pd.read_csv(os.path.join(data_path, "Prior_Knowledge_PRECISEADS.csv"))
+#PK8_PRECIESADS = pd.read_csv("C:/Users/Inigo/Documents/Prior_Knowledge_PRECISEADS.csv")
 PK8_PRECIESADS.set_index('1', inplace=True)
 
 #args.dc_grn = 'False'
