@@ -33,7 +33,7 @@ OPTION 2 - Create uv HGT environment
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv venv hgt_env
 source hgt_env/bin/activate
-uv pip install env/hgt_env.txt
+uv pip install -r env/hgt_env.txt
 
 ```
 
