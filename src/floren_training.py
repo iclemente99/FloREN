@@ -46,6 +46,7 @@ import copy
 from sklearn.preprocessing import MinMaxScaler
 import itertools
 
+import scanpy as sc
 
 
 
@@ -82,6 +83,7 @@ parser.add_argument('--in_dim', type=int, default=256, help='Number of hidden di
 parser.add_argument('--floren_grn', type=str, default='True', help='Decide if to run the floren published gene-gene connections inference')
 
 # HGTGSSL
+parser.add_argument('--knn', type=float, default=30, help='Number of Nearest Neighbors to keep in KNN cell-gene calculation when --tfs = True ')
 parser.add_argument('--epoch', type=int, default=100)
 parser.add_argument('--n_hid', type=int, default=128, help='Number of hidden dimension')
 parser.add_argument('--n_heads', type=int, default=8 ,help='Number of attention head')
@@ -108,7 +110,7 @@ parser.add_argument('--output_path', default='~/hgt_input', type=str, help='Path
 parser.add_argument('--cell_comm_path', default=None, type=str, help='Path to folder with cell-cell communication adjacency matrix')
 parser.add_argument('--tfs', default=False, type=str, help='Option to work at tfs level')
 parser.add_argument('--result_dir', default=None, type=str, help='Path to folder with FloREN model outputs')
-parser.add_argument('--metadata_path', default=None, type=str, help='Path to metadata file')
+#parser.add_argument('--metadata_path', default=None, type=str, help='Path to metadata file')
 
 
 args = parser.parse_args()
@@ -164,17 +166,19 @@ print(device)
 #---------------------------------------------------------------
 
 data_path = args.data_path
-#data_path = "C:/Users/Inigo/Desktop/FloREN/Perez/tfs"
+adata = sc.read_h5ad(data_path)
+inds = np.unique(adata.obs["patient_id"].values.astype(str))
 #count_matrices_path = os.path.join(data_path, "count_matrices")
 #count_matrices_path = "/home/inigo/Desktop/FloREN3.0/Binvignat/genes/"
-print(f"Looking for CSV files in: {data_path}")
-csv_files = glob.glob(os.path.join(data_path, "*.csv"))
-print(f"Found {len(csv_files)} CSV files: {csv_files}")
-
+#print(f"Looking for CSV files in: {data_path}")
+#csv_files = glob.glob(os.path.join(data_path, "*.csv"))
+#print(f"Found {len(csv_files)} CSV files: {csv_files}")
 # Load reference for gene names and concatenate all matrices
-reference = pd.read_csv(csv_files[0])
-gene_names = reference[reference.columns[0]].values
-n_genes = reference.shape[0]
+#reference = pd.read_csv(csv_files[0])
+#gene_names = reference[reference.columns[0]].values
+#n_genes = reference.shape[0]
+gene_names = adata.var_names
+n_genes = len(adata.var_names)
 
 if n_genes < args.in_dim:
     h_n = n_genes
@@ -212,11 +216,13 @@ for file_idx, patient_name in enumerate(files):
     # Gene-cell adjacency
     # -------------------------
     if args.tfs == False:
-        load_file = [f for f in csv_files if patient_name in f][0]
-        transformed_matrix = pd.read_csv(load_file)
-        transformed_matrix = transformed_matrix.iloc[:, 1:].values
+        #load_file = [f for f in csv_files if patient_name in f][0]
+        #transformed_matrix = pd.read_csv(load_file)
+        #transformed_matrix = transformed_matrix.iloc[:, 1:].values
+        adata_subset = adata[adata.obs['donor_id'].isin([patient_name])]
+        transformed_matrix = adata_subset.layers['logcounts'].A.T
         gene_cell = transformed_matrix
-        gene_cell[gene_cell >= 0.5] = 1
+        gene_cell[gene_cell >= 0] = 1
         # gene_cell[gene_cell <= 5] = 0
     else:
         cells_files = pd.read_csv(os.path.join(cell_embeddings_norm_path, f"{patient_name}_AE_Emb_Cells.csv"))
@@ -226,7 +232,7 @@ for file_idx, patient_name in enumerate(files):
         genes_files.drop(genes_files.columns[0], axis=1, inplace=True)
         encoded = torch.tensor(genes_files.values, dtype=torch.float32).to(device)
         dist = pairwise_distances(encoded, encoded2)  # genes × cells
-        K = 30
+        K = args.knn
         transformed_matrix = lil_matrix((encoded.shape[0], encoded2.shape[0]))
         for i in range(dist.shape[0]):
             top_idx = np.argpartition(dist[i], K)[:K]
@@ -336,12 +342,14 @@ print(device)  # Print device. IMPORTANT for incompatibilities.
 #
 ################################################################
 
-metadata = pd.read_csv(args.metadata_path)
+#metadata = pd.read_csv(args.metadata_path)
 #metadata = pd.read_csv("/Users/Inigo/Desktop/FloREN/Perez/samples_metadata_unique.csv")
 #metadata.columns = ["Unnamed: 0", "0", "patient_id", "group", "Age", "Sex", "Ethnicity", "Pool", "Batch", "Age_Group"]
 #metadata.columns = ["patient_id", "patient_num", "patient_ID", "group", "Age", "Sex", "Tissue"]
-metadata["group"] = metadata["group"].astype("category").cat.codes
+#metadata["group"] = metadata["group"].astype("category").cat.codes
 #metadata["patient_id"] = "schafflick_" + metadata["patient_id"].astype(str)
+metadata = adata.obs[["patient_id","group"]]
+metadata = metadata.groupby("patient_id").first().reset_index()
 
 def stratified_split_graphs(patient_graphs, metadata_df, test_size=0.15, val_size=0.15, random_state=42):
     # Make lookup from metadata
@@ -460,9 +468,11 @@ def pregenerate_jobs(graphs, csv_files, gene_rate, cell_rate, device):
         patient_name = patient['name']
         # Get graph and gene_cell matrix
         graph = patient['graph']
-        load_file = [f for f in csv_files if patient_name in f][0]
-        transformed_matrix = pd.read_csv(load_file)
-        transformed_matrix = transformed_matrix.iloc[:, 1:].values
+        #load_file = [f for f in csv_files if patient_name in f][0]
+        #transformed_matrix = pd.read_csv(load_file)
+        #transformed_matrix = transformed_matrix.iloc[:, 1:].values
+        adata_subset = adata[adata.obs['patient_id'].isin([patient_name])]
+        transformed_matrix = adata_subset.layers['logcounts'].A.T
         gene_cell = transformed_matrix
         #
         # Generate jobs
@@ -841,9 +851,11 @@ for patient in all_graphs:
     df2 = pd.concat([positions, df], axis=1)
     df2.to_csv(os.path.join(att_dir, f"{patient_name}_edge_att.csv"), sep=",", index=True)
     # Save cell embeddings
-    np.savetxt(os.path.join(cell_dir, f"{patient_name}_cell_embs.csv"), cell_embs, delimiter=",")
+    #np.savetxt(os.path.join(cell_dir, f"{patient_name}_cell_embs.csv"), cell_embs, delimiter=",")
+    pd.DataFrame(cell_embs, index=adata_subset.obs_names).to_csv(os.path.join(cell_dir, f"{patient_name}_cell_embs.csv"))
     # Save gene embeddings
-    np.savetxt(os.path.join(gene_dir, f"{patient_name}_gene_embs.csv"), gene_embs, delimiter=",")
+    #np.savetxt(os.path.join(gene_dir, f"{patient_name}_gene_embs.csv"), gene_embs, delimiter=",")
+    pd.DataFrame(gene_embs, index=adata_subset.obs_names).to_csv(os.path.join(gene_dir, f"{patient_name}_gene_embs.csv"))
     # Save node attentions
     num_nodes = gnn_input[0][0].shape[0]
     node_attention = np.zeros(num_nodes, dtype=np.float64)
@@ -854,8 +866,10 @@ for patient in all_graphs:
     cells_grad = node_attention[num_genes:]  # (num_cells, in_dim)
     patient_out = os.path.join(inter_dir, patient_name)
     os.makedirs(patient_out, exist_ok=True)
-    np.savetxt(os.path.join(patient_out, "genes_atts.csv"), genes_grad, delimiter=",")
-    np.savetxt(os.path.join(patient_out, "cells_atts.csv"), cells_grad, delimiter=",")
+    #np.savetxt(os.path.join(patient_out, "genes_atts.csv"), genes_grad, delimiter=",")
+    #np.savetxt(os.path.join(patient_out, "cells_atts.csv"), cells_grad, delimiter=",")
+    pd.DataFrame(genes_grad, index=adata_subset.obs_names).to_csv(os.path.join(patient_out, "genes_atts.csv"))
+    pd.DataFrame(cells_grad, index=adata_subset.var_names).to_csv(os.path.join(patient_out, "cells_atts.csv"))
     # Save patient embeddings
     np.savetxt(os.path.join(patient_emb_dir_split, f"{patient_name}_emb_ssl.csv"), emb_104, delimiter=",")
     np.savetxt(os.path.join(patient_emb_dir_split, f"{patient_name}_emb_g32.csv"), g_32, delimiter=",")
