@@ -350,6 +350,7 @@ print(device)  # Print device. IMPORTANT for incompatibilities.
 #metadata["patient_id"] = "schafflick_" + metadata["patient_id"].astype(str)
 metadata = adata.obs[["patient_id","group"]]
 metadata = metadata.groupby("patient_id").first().reset_index()
+metadata["group"] = metadata["group"].astype("category").cat.codes
 
 def stratified_split_graphs(patient_graphs, metadata_df, test_size=0.15, val_size=0.15, random_state=42):
     # Make lookup from metadata
