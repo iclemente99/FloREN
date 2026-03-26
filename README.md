@@ -136,12 +136,7 @@ python src/floren_visualization.py
 
 ## ✍️ Citation & Acknowledgements
 
-This work was developed at LBAI-UBO, inspired by methods from:
-
-DeepMAPS (Nature Communications, 2023)
-Graph Contrastive Learning (ICML, 2022)
-
-Please cite accordingly if used in academic research.
+This work was developed at LBAI-UBO. Please cite accordingly if used in academic research.
 
 ## 🖥️ Maintainers
 
