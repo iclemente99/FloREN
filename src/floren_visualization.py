@@ -102,7 +102,7 @@ parser.add_argument('--n_heads', type=int, default=8 ,help='Number of attention 
 #parser.add_argument('--optimizer', type=str, default='adamw', help='optimizer')
 
 # Data directories
-parser.add_argument('--data_path', default='~/data', type=str, help='Path to folder with graph construction outputs')
+parser.add_argument('--data_path', default='~/data', type=str, help='Path to adata object')
 parser.add_argument('--output_path', default='~/hgt_input', type=str, help='Path to folder with graph construction outputs')
 #parser.add_argument('--cell_comm_path', default=None, type=str, help='Path to folder with cell-cell communication adjacency matrix')
 #parser.add_argument('--tfs', default=False, type=str, help='Option to work at tfs level')
