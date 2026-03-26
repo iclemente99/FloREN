@@ -78,7 +78,7 @@ To run the FloREN pipeline, the input data must be organized in the `./data/` di
 
 # Run floren_input.py function
 python src/floren_input.py \
-  --data_path './data/binvignat_object_curated/' \
+  --data_path './data/binvignat_example/' \
   --cell_comm_path './data/cell_connections/' \
   --output_path './floren_output/' \
   --epochs 150
@@ -93,7 +93,7 @@ python src/floren_input.py \
 
 # Run floren_training.py
 python src/floren_hgt.py
-  --data_path './data/binvignat_object_curated/'
+  --data_path './data/binvignat_example/'
   --result_dir './floren_output/'
   --epcoh 100
 
@@ -105,7 +105,7 @@ python src/floren_hgt.py
 
 # Run floren_visualization.py
 python src/floren_visualization.py
-  --data_path './data/binvignat_object_curated/'
+  --data_path './data/binvignat_example/'
   --result_dir './floren_output/'
   --epcoh 100
 
