@@ -181,7 +181,7 @@ for f in csv_files:
     #cell_counts.append(file.shape[1] - 1)  # Number of cells for this patient
     #file = file.iloc[:, 1:].to_numpy()
     #gene_cell = np.concatenate((gene_cell, file), axis=1)
-    adata_subset = adata[adata.obs['donor_id'].isin([inds[ind]])]
+    adata_subset = adata[adata.obs['patient_id'].isin([inds[ind]])]
     f_matrix = adata_subset.layers['logcounts'].A.T
     file = pd.DataFrame(f_matrix, columns=adata_subset.obs_names, index=adata_subset.var_names)
     patient_name = [inds[ind]]
