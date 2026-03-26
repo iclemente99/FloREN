@@ -85,7 +85,7 @@ python src/floren_input.py \
   --grn_cutoff 0.9
 
 ```
-**If cell_comm_path not given, the model will run without cell communication information.**
+**If cell_comm_path not given, the model will keep running without cell communication information.**
 
 ### Step 2: Train Heterogenous Graph Transformer Self-Supervised Learning (HGTSSL) with Supervised finetunning
 
