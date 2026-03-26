@@ -60,6 +60,7 @@ To run the FloREN pipeline, the input data must be organized in the `./data/` di
 - **VARS**: The adata object should only contain the genes that you want to work with (e.x: 2000 HVG). adata.var_names will be the gene names used.
 - **MATRIX**: The matrix used for the model is going to be the adata.layers['logcounts'] - Make sure that this layer exist and contains the log normalized data.
 - **OBS**: The adata.obs_names will be the cell names used. The obs used are going to be "patient_id" for sample aggregation and "group" for supervised classification task.
+- **Note**: In the actual version, if you want to work at tfs level, you should work on an adata object where adata.vars are the tfs obtained by methods like pyscenic or decoupler. Still important to have the adata.layers['logcounts'].
 
 ### 2. Cell-Cell Connection Matrices (`./data/cell_connections/`)
 - **Location**: `./data/cell_connections/`
