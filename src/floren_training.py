@@ -105,7 +105,7 @@ parser.add_argument('--val_size', type=float, default=0.2, help='Size of validat
 parser.add_argument('--patience', type=float, default=30, help='patience for early stopping')
 
 # Data directories
-parser.add_argument('--data_path', default='~/data', type=str, help='Path to folder with graph construction outputs')
+parser.add_argument('--data_path', default='~/data', type=str, help='Path to adata object')
 parser.add_argument('--output_path', default='~/hgt_input', type=str, help='Path to folder with graph construction outputs')
 parser.add_argument('--cell_comm_path', default=None, type=str, help='Path to folder with cell-cell communication adjacency matrix')
 parser.add_argument('--tfs', default=False, type=str, help='Option to work at tfs level')
@@ -219,7 +219,7 @@ for file_idx, patient_name in enumerate(files):
         #load_file = [f for f in csv_files if patient_name in f][0]
         #transformed_matrix = pd.read_csv(load_file)
         #transformed_matrix = transformed_matrix.iloc[:, 1:].values
-        adata_subset = adata[adata.obs['donor_id'].isin([patient_name])]
+        adata_subset = adata[adata.obs['patient_id'].isin([patient_name])]
         transformed_matrix = adata_subset.layers['logcounts'].A.T
         gene_cell = transformed_matrix
         gene_cell[gene_cell >= 0] = 1
