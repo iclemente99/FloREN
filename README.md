@@ -56,39 +56,17 @@ mv "temp/inner/Prior_Knowledge_PRECISEADS (copy).csv" ./data/Prior_Knowledge_PRE
 
 To run the FloREN pipeline, the input data must be organized in the `./data/` directory with specific formats for gene expression and cell connection data. Below are the requirements for each sample:
 
-### 1. Gene Expression Matrices (`./data/count_matrices/`)
-- **Location**: `./data/count_matrices/`
-- **Format**: One matrix file per sample, stored as a text file (e.g., `.txt` or `.csv`).
-- **Dimensions**: Each matrix should have dimensions `[N, M]`, where:
-  - `N` = number of genes
-  - `M` = number of cells
-- **Content**: The matrix contains gene expression values, where rows represent genes and columns represent cells.
-- **Naming**: Files should be named consistently with sample identifiers (e.g., `sample_Control01.txt`, `sample_RA05.txt`) to match metadata in `./data/metadata.csv`.
+### 1. Adata object (`./data/`)
+- **VARS**: The adata object should only contain the genes that you want to work with (e.x: 2000 HVG). adata.var_names will be the gene names used.
+- **MATRIX**: The matrix used for the model is going to be the adata.layers['logcounts'] - Make sure that this layer exist and contains the log normalized data.
+- **OBS**: The adata.obs_names will be the cell names used. The obs used are going to be "patient_id" for sample aggregation and "group" for supervised classification task.
 
 ### 2. Cell-Cell Connection Matrices (`./data/cell_connections/`)
 - **Location**: `./data/cell_connections/`
 - **Format**: One matrix file per sample, stored as a text file (e.g., `.txt` or `.csv`).
 - **Dimensions**: Each matrix should have dimensions `[M, M]`, where `M` = number of cells (matching the number of cells in the corresponding gene expression matrix).
-- **Content**: The matrix represents cell-cell connections (e.g., adjacency or similarity matrix). If no cell connection data is available, provide an empty (zero-filled) matrix of the appropriate size.
-- **Naming**: Files should match the sample identifiers used in `./data/count_matrices/` (e.g., `sample_Control01.txt`, `sample_RA05.txt`).
-
-### Notes
-- Ensure that the sample names in `./data/count_matrices/` and `./data/cell_connections/` match the `patient_id` entries in `./data/metadata.csv`.
-- If cell connection data is not available, you must still provide a zero-filled matrix in `./data/cell_connections/` for each sample to avoid errors in the pipeline.
-- The pipeline assumes text files are space- or comma-separated. Adjust the file format if necessary to match the expected delimiter in the preprocessing scripts (e.g., `run_hgt.py`).
-
-### 3. Metadata File (`./data/metadata.csv`)
-- **Location**: `./data/metadata.csv`
-- **Format**: A CSV file with exactly two columns: `patient_id` and `group`.
-- **Content**:
-  - `patient_id`: A unique identifier for each sample, matching the sample names in `./data/count_matrices/` and `./data/cell_connections/` (e.g., `Control01`, `RA05`). The `patient_id` should correspond to the prefix of the filenames (e.g., `sample_Control01.txt` has `patient_id` = `Control01`).
-  - `group`: The group or class label for the sample (e.g., 0, 1), used for stratified splitting or downstream analysis.
-- **Purpose**: Links each sample’s gene expression and cell connection matrices to its group label, enabling the pipeline to process samples according to their experimental conditions.
-
-### Notes
-- The CSV must include a header row with `patient_id` and `group`.
-- Ensure `patient_id` values exactly match the sample identifiers in the filenames (after removing the `sample_` prefix).
-- Missing or mismatched `patient_id` entries will cause errors in the pipeline (e.g., `ValueError: Patient ID not found in metadata`).
+- **Content**: The matrix represents cell-cell connections (e.g., adjacency or similarity matrix).
+- **Naming**: Files should match the sample identifiers used in `adata.obs.apatient_id`
 
 ## 🚀 Usage
 
@@ -100,13 +78,14 @@ To run the FloREN pipeline, the input data must be organized in the `./data/` di
 
 # Run floren_input.py function
 python src/floren_input.py \
-  --data_path './data/count_matrices/' \
+  --data_path './data/binvignat_object_curated/' \
   --cell_comm_path './data/cell_connections/' \
   --output_path './floren_output/' \
   --epochs 150
   --grn_cutoff 0.9
 
 ```
+**If cell_comm_path not given, the model will run without cell communication information.**
 
 ### Step 2: Train Heterogenous Graph Transformer Self-Supervised Learning (HGTSSL) with Supervised finetunning
 
@@ -114,9 +93,8 @@ python src/floren_input.py \
 
 # Run floren_training.py
 python src/floren_hgt.py
-  --data_path './data/count_matrices/'
+  --data_path './data/binvignat_object_curated/'
   --result_dir './floren_output/'
-  --metadata_path './data/samples_metadata.csv/'
   --epcoh 100
 
 ```
@@ -127,9 +105,8 @@ python src/floren_hgt.py
 
 # Run floren_visualization.py
 python src/floren_visualization.py
-  --data_path './data/count_matrices/'
+  --data_path './data/binvignat_object_curated/'
   --result_dir './floren_output/'
-  --metadata_path './data/samples_metadata.csv/'
   --epcoh 100
 
 ```
