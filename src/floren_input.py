@@ -47,6 +47,8 @@ from statsmodels.stats.multitest import multipletests
 import copy
 from sklearn.preprocessing import MinMaxScaler
 
+import scanpy as sc
+
 # ---------------------------------------------------------------
 #
 #         DEEPMAPS PREPARATION FOR HGT IMPLEMENTATION
@@ -102,7 +104,7 @@ parser.add_argument('--AEtype', type=int, default=1, help='AEtype:1 embedding no
 parser.add_argument('--optimizer', type=str, default='adamw', help='optimizer')
 
 # Data directories
-parser.add_argument('--data_path', default='~/data', type=str, help='Path to folder with graph construction outputs')
+parser.add_argument('--data_path', default='~/data', type=str, help='Path to adata object')
 parser.add_argument('--output_path', default='~/hgt_input', type=str,
                     help='Path to folder with graph construction outputs')
 parser.add_argument('--cell_comm_path', default=None, type=str,
@@ -148,35 +150,47 @@ data_path = args.data_path
 #data_path = "C:/Users/Inigo/Desktop/FloREN/Perez/tfs"
 # count_matrices_path = os.path.join(data_path, "count_matrices")
 # count_matrices_path = "/home/inigo/Desktop/FloREN3.0/Binvignat/genes/"
-print(f"Looking for CSV files in: {data_path}")
-csv_files = glob.glob(os.path.join(data_path, "*.csv"))
-print(f"Found {len(csv_files)} CSV files: {csv_files}")
+#print(f"Looking for CSV files in: {data_path}")
+#csv_files = glob.glob(os.path.join(data_path, "*.csv"))
+#print(f"Found {len(csv_files)} CSV files: {csv_files}")
+adata = sc.read_h5ad(data_path)
 
 # Load reference for gene names and concatenate all matrices
-reference = pd.read_csv(csv_files[0])
-print(f"Attention! Your input files have shape: {reference.shape}")
-gene_names = reference[reference.columns[0]].values
-n_genes = reference.shape[0]
+#reference = pd.read_csv(csv_files[0])
+#print(f"Attention! Your input files have shape: {reference.shape}")
+#gene_names = reference[reference.columns[0]].values
+#n_genes = reference.shape[0]
+gene_names = adata.var_names
+n_genes = len(adata.var_names)
 
 if n_genes < args.in_dim:
     h_n = n_genes
 else:
     h_n = args.in_dim
 
+inds = np.unique(adata.obs["patient_id"].values.astype(str))
 gene_cell = np.zeros((n_genes, 1))
 cells = []
 cell_counts = []
 for f in csv_files:
-    file = pd.read_csv(f)
+    #file = pd.read_csv(f)
     #patient_name = str.split(str.split(f, 'genes')[1], '.csv')[0]
     #patient_name = str.split(f, '.csv')[0]
-    patient_name = str.split(str.split(f, str.split(data_path, "/")[-1] + "\\")[1], '.csv')[0]
-    cells.append([patient_name + '__' + col for col in file.columns[1:]])
-    cell_counts.append(file.shape[1] - 1)  # Number of cells for this patient
-    file = file.iloc[:, 1:].to_numpy()
+    #patient_name = str.split(str.split(f, str.split(data_path, "/")[-1] + "\\")[1], '.csv')[0]
+    #cells.append([patient_name + '__' + col for col in file.columns[1:]])
+    #cell_counts.append(file.shape[1] - 1)  # Number of cells for this patient
+    #file = file.iloc[:, 1:].to_numpy()
+    #gene_cell = np.concatenate((gene_cell, file), axis=1)
+    adata_subset = adata[adata.obs['donor_id'].isin([inds[ind]])]
+    f_matrix = adata_subset.layers['logcounts'].A.T
+    file = pd.DataFrame(f_matrix, columns=adata_subset.obs_names, index=adata_subset.var_names)
+    patient_name = [inds[ind]]
+    cells.append([patient_name[0] + '__' + col for col in file.columns])
+    cell_counts.append(file.shape[1])
+    file = file.values
     gene_cell = np.concatenate((gene_cell, file), axis=1)
 
-# gene_cell = gene_cell[:, 1:]  # Shape: [n_genes, total_cells]
+gene_cell = gene_cell[:, 1:]  # Shape: [n_genes, total_cells]
 
 epochs = args.epochs
 # Train autoencoders on merged matrix
@@ -211,8 +225,9 @@ if args.reduction == 'AE':
     start_idx = 0
     for i, (patient_cells, n_cells) in enumerate(zip(cells, cell_counts)):
         #patient_name = str.split(str.split(csv_files[i], 'perez_')[1], '.csv')[0]
-        patient_name = str.split(str.split(csv_files[i], str.split(data_path, "/")[-1]+"\\")[1], '.csv')[0]
+        #patient_name = str.split(str.split(csv_files[i], str.split(data_path, "/")[-1]+"\\")[1], '.csv')[0]
         #patient_name = str.split(csv_files[i], '.csv')[0]
+        patient_name = inds[i]
         print(f"Processing patient: {patient_name}")
         #
         # Extract cell embeddings
@@ -236,7 +251,8 @@ else:
     start_idx = 0
     for i, (patient_cells, n_cells) in enumerate(zip(cells, cell_counts)):
         #patient_name = str.split(str.split(csv_files[i], 'perez_')[1], '.csv')[0]
-        patient_name = str.split(str.split(csv_files[i], str.split(data_path, "/")[-1]+"\\")[1], '.csv')[0]
+        #patient_name = str.split(str.split(csv_files[i], str.split(data_path, "/")[-1]+"\\")[1], '.csv')[0]
+        patient_name = inds[i]
         print(f"Processing patient (raw): {patient_name}")
         #
         # Extract raw cell data
@@ -303,7 +319,8 @@ g_idx = 0
 c_idx = 0
 for i in range(len(patient_gene_embeddings)):
     #patient_name = str.split(str.split(csv_files[i], 'perez_')[1], '.csv')[0]
-    patient_name = str.split(str.split(csv_files[i], str.split(data_path, "/")[-1]+"\\")[1], '.csv')[0]
+    #patient_name = str.split(str.split(csv_files[i], str.split(data_path, "/")[-1]+"\\")[1], '.csv')[0]
+    patient_name = inds[i]
     #
     g_end = g_idx + patient_gene_embeddings[i].shape[0]
     c_end = c_idx + patient_cell_embeddings[i].shape[0]
@@ -341,7 +358,8 @@ PK8_PRECIESADS.set_index('1', inplace=True)
 # Process gene-gene connections for each patient
 for i, f in enumerate(csv_files):
     #patient_name = str.split(str.split(f, 'perez_')[1], '.csv')[0]
-    patient_name = str.split(str.split(f, str.split(data_path, "/")[-1] + "\\")[1], '.csv')[0]
+    #patient_name = str.split(str.split(f, str.split(data_path, "/")[-1] + "\\")[1], '.csv')[0]
+    patient_name = inds[i]
     print(f"Calculating gene-gene connections for patient: {patient_name}")
     #
     # Load gene embeddings
