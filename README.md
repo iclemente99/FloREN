@@ -64,9 +64,9 @@ To run the FloREN pipeline, the input data must be organized in the `./data/` di
 
 ### 2. Cell-Cell Connection Matrices (`./data/cell_connections/`)
 - **Location**: `./data/cell_connections/`
-- **Format**: One matrix file per sample, stored as a text file (e.g., `.txt` or `.csv`).
+- **Format**: One matrix file per sample, stored as a csv file.
 - **Dimensions**: Each matrix should have dimensions `[M, M]`, where `M` = number of cells (matching the number of cells in the corresponding gene expression matrix).
-- **Content**: The matrix represents cell-cell connections (e.g., adjacency or similarity matrix).
+- **Content**: The matrix represents cell-cell connections (e.g., adjacency matrix).
 - **Naming**: Files should match the sample identifiers used in `adata.obs.apatient_id`
 
 ## 🚀 Usage
