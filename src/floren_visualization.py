@@ -46,6 +46,8 @@ import copy
 from sklearn.preprocessing import MinMaxScaler
 import itertools
 
+import scanpy as sc
+
 
 
 
@@ -105,7 +107,7 @@ parser.add_argument('--output_path', default='~/hgt_input', type=str, help='Path
 #parser.add_argument('--cell_comm_path', default=None, type=str, help='Path to folder with cell-cell communication adjacency matrix')
 #parser.add_argument('--tfs', default=False, type=str, help='Option to work at tfs level')
 parser.add_argument('--result_dir', default=None, type=str, help='Path to folder with FloREN model outputs')
-parser.add_argument('--metadata_path', default=None, type=str, help='Path to metadata file')
+#parser.add_argument('--metadata_path', default=None, type=str, help='Path to metadata file')
 
 
 args = parser.parse_args()
@@ -117,7 +119,12 @@ os.makedirs(plots_dir, exist_ok=True)
 loss_dir = args.output_path + '/loss/'  # Sets directory for loss output
 patient_emb_dir = args.output_path + '/floren_patient_embeddings/'
 
-metadata = pd.read_csv(args.metadata_path)
+data_path = args.data_path
+inds = np.unique(adata.obs["patient_id"].values.astype(str))
+adata = sc.read_h5ad(data_path)
+metadata = adata.obs[["patient_id","group"]]
+metadata = metadata.groupby("patient_id").first().reset_index()
+#metadata = pd.read_csv(args.metadata_path)
 #metadata = pd.read_csv("/Users/Inigo/Desktop/FloREN/Perez/samples_metadata_unique.csv")
 #metadata.columns = ["Unnamed: 0", "0", "patient_id", "group", "Age", "Sex", "Ethnicity", "Pool", "Batch", "Age_Group"]
 #metadata.columns = ["patient_id", "patient_num", "patient_ID", "group", "Age", "Sex", "Tissue"]
@@ -125,18 +132,17 @@ metadata["group_txt"] = metadata["group"]
 metadata["group"] = metadata["group"].astype("category").cat.codes
 #metadata["patient_id"] = "schafflick_" + metadata["patient_id"].astype(str)
 
-data_path = args.data_path
+#data_path = args.data_path
 #data_path = "C:/Users/Inigo/Desktop/FloREN/Perez/tfs"
 #count_matrices_path = os.path.join(data_path, "count_matrices")
 #count_matrices_path = "/home/inigo/Desktop/FloREN3.0/Binvignat/genes/"
-print(f"Looking for CSV files in: {data_path}")
-csv_files = glob.glob(os.path.join(data_path, "*.csv"))
-print(f"Found {len(csv_files)} CSV files: {csv_files}")
+#print(f"Looking for CSV files in: {data_path}")
+#csv_files = glob.glob(os.path.join(data_path, "*.csv"))
+#print(f"Found {len(csv_files)} CSV files: {csv_files}")
 
 # Load reference for gene names and concatenate all matrices
-reference = pd.read_csv(csv_files[0])
-gene_names = reference[reference.columns[0]].values
-n_genes = reference.shape[0]
+gene_names = adata.var_names
+n_genes = len(adata.var_names)
 
 #if n_genes < args.in_dim:
 #    h_n = n_genes
