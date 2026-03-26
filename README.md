@@ -1,4 +1,4 @@
-# FloREN a novel Interpretqble Heterogenous Graph Transformer Self-Supervised Learning architecture for Sample-Level Representations
+# FloREN: An Interpretable Sample Representation Method to unveil immune networks through Graph Transformers
 
 <p align="center">
   <img src="docs/florenpy.png" width="600">
