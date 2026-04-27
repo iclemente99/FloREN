@@ -172,7 +172,7 @@ inds = np.unique(adata.obs["patient_id"].values.astype(str))
 gene_cell = np.zeros((n_genes, 1))
 cells = []
 cell_counts = []
-for f in csv_files:
+for ind in inds:
     #file = pd.read_csv(f)
     #patient_name = str.split(str.split(f, 'genes')[1], '.csv')[0]
     #patient_name = str.split(f, '.csv')[0]
