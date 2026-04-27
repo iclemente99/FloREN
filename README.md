@@ -46,8 +46,8 @@ cd ~/FloREN
 
 # Unzip the file
 mkdir -p temp
-unzip ./data/Prior_Knowledge_PRECISEADS_compI_compII.zip -d temp
-unzip temp/*.zip -d temp/inner
+unzip ./data/Prior_Knowledge_PRECISEADS_compI_compII.zip -d temp # For Windows run: Expand-Archive -Path ".\data\Prior_Knowledge_PRECISEADS_compI_compII.zip" -DestinationPath ".\temp"
+unzip temp/*.zip -d temp/inner # For Windows run: Get-ChildItem "temp\*.zip" | ForEach-Object { Expand-Archive -Path $_.FullName -DestinationPath "temp\inner" -Force }
 mv "temp/inner/Prior_Knowledge_PRECISEADS (copy).csv" ./data/Prior_Knowledge_PRECISEADS.csv
 
 ```
