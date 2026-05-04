@@ -85,8 +85,8 @@ python src/floren_input.py \
   --adata_path './data/binvignat_example.h5ad' \
   --cell_comm_path './data/cell_connections/' \
   --output_path './floren_output/' \
-  --epochs 150
-  --grn_cutoff 0.9
+  --epochs 150 \
+  --grn_cutoff 0.9 \
 
 ```
 **If cell_comm_path not given, the model will keep running without cell communication information.**
@@ -99,12 +99,12 @@ This step will train the model and save all the results: patient embeddings, cel
 
 # Run floren_training.py
 python src/floren_training.py
-  --adata_path './data/binvignat_example.h5ad'
-  --result_dir './floren_output/'
-  --epcohs 100
-  --patient_id "patient_id"
-  --metadata_group "disease"
-  --min_count 0 # 
+  --adata_path './data/binvignat_example.h5ad' \
+  --result_dir './floren_output/' \
+  --epcohs 100 \
+  --patient_id "patient_id" \
+  --metadata_group "disease" \
+  --min_count 0  \
 
 ```
 
@@ -115,11 +115,11 @@ Once the model is trained, this step will help with the initial visualization of
 ```bash
 
 # Run floren_visualization.py
-python src/floren_visualization.py
-  --adata_path './data/binvignat_example.h5ad'
-  --result_dir './floren_output/'
-  --patient_id "patient_id"
-  --metadata_group "disease"
+python src/floren_visualization.py \
+  --adata_path './data/binvignat_example.h5ad' \
+  --result_dir './floren_output/' \
+  --patient_id "patient_id" \
+  --metadata_group "disease" \
 
 ```
 
