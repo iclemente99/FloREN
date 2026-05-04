@@ -104,11 +104,17 @@ parser.add_argument('--AEtype', type=int, default=1, help='AEtype:1 embedding no
 parser.add_argument('--optimizer', type=str, default='adamw', help='optimizer')
 
 # Data directories
-parser.add_argument('--data_path', default='~/data', type=str, help='Path to adata object')
-parser.add_argument('--output_path', default='~/hgt_input', type=str,
+parser.add_argument('--data_path', default='./data/', type=str, help='Path to FloREN data')
+parser.add_argument('--output_path', default='./floren_output/', type=str,
                     help='Path to folder with graph construction outputs')
 parser.add_argument('--cell_comm_path', default=None, type=str,
                     help='Path to folder with cell-cell communication adjacency matrix')
+parser.add_argument('--patient_id', default='patient_id', type=str,
+                    help='adata.obs column with the patient identifier')
+parser.add_argument('--count_layer', default='logcounts', type=str,
+                    help='adata.layer name with the log normalized counts')
+parser.add_argument('--adata_path', default='./data/binvignat_example.h5ad', type=str, help='Path to adata object')
+
 
 args = parser.parse_args()
 #args.epoch = 100
@@ -130,6 +136,7 @@ os.makedirs(gene_embeddings_path, exist_ok=True)
 os.makedirs(cell_embeddings_path, exist_ok=True)
 os.makedirs(connections_path, exist_ok=True)
 
+print("Using device:")
 #args.cuda = 1
 # Set device
 if args.cuda == 0:
@@ -138,7 +145,7 @@ if args.cuda == 0:
 else:
     device = torch.device("cpu")
 
-print(device)
+print(  device)
 
 # ---------------------------------------------------------------
 #
@@ -146,6 +153,7 @@ print(device)
 #
 # ---------------------------------------------------------------
 
+print("Loading adata object")
 data_path = args.data_path
 #data_path = "C:/Users/Inigo/Desktop/FloREN/Perez/tfs"
 # count_matrices_path = os.path.join(data_path, "count_matrices")
@@ -153,7 +161,8 @@ data_path = args.data_path
 #print(f"Looking for CSV files in: {data_path}")
 #csv_files = glob.glob(os.path.join(data_path, "*.csv"))
 #print(f"Found {len(csv_files)} CSV files: {csv_files}")
-adata = sc.read_h5ad(data_path)
+#adata = sc.read_h5ad(glob.glob(os.path.join(data_path, "*.h5ad"))[0])
+adata = sc.read_h5ad(args.adata_path)
 
 # Load reference for gene names and concatenate all matrices
 #reference = pd.read_csv(csv_files[0])
@@ -162,17 +171,19 @@ adata = sc.read_h5ad(data_path)
 #n_genes = reference.shape[0]
 gene_names = adata.var_names
 n_genes = len(adata.var_names)
+patient_id = args.patient_id
+count_layer = args.count_layer
 
 if n_genes < args.in_dim:
     h_n = n_genes
 else:
     h_n = args.in_dim
 
-inds = np.unique(adata.obs["patient_id"].values.astype(str))
+inds = np.unique(adata.obs[patient_id].values.astype(str))
 gene_cell = np.zeros((n_genes, 1))
 cells = []
 cell_counts = []
-for ind in inds:
+for ind in range(len(inds)):
     #file = pd.read_csv(f)
     #patient_name = str.split(str.split(f, 'genes')[1], '.csv')[0]
     #patient_name = str.split(f, '.csv')[0]
@@ -181,8 +192,8 @@ for ind in inds:
     #cell_counts.append(file.shape[1] - 1)  # Number of cells for this patient
     #file = file.iloc[:, 1:].to_numpy()
     #gene_cell = np.concatenate((gene_cell, file), axis=1)
-    adata_subset = adata[adata.obs['patient_id'].isin([inds[ind]])]
-    f_matrix = adata_subset.layers['logcounts'].A.T
+    adata_subset = adata[adata.obs[patient_id].isin([inds[ind]])]
+    f_matrix = adata_subset.layers[count_layer].A.T
     file = pd.DataFrame(f_matrix, columns=adata_subset.obs_names, index=adata_subset.var_names)
     patient_name = [inds[ind]]
     cells.append([patient_name[0] + '__' + col for col in file.columns])
@@ -192,6 +203,10 @@ for ind in inds:
 
 gene_cell = gene_cell[:, 1:]  # Shape: [n_genes, total_cells]
 
+print(f"    Total genes: {gene_cell.shape[0]}")
+print(f"    Total cells: {gene_cell.shape[1]}")
+
+print("\nRUNNING AE")
 epochs = args.epochs
 # Train autoencoders on merged matrix
 if args.reduction == 'AE':
@@ -208,6 +223,8 @@ else:
 #            PER-PATIENT EMBEDDINGS
 #
 # ---------------------------------------------------------------
+
+print("Processing samples individually")
 
 import itertools
 
@@ -228,7 +245,7 @@ if args.reduction == 'AE':
         #patient_name = str.split(str.split(csv_files[i], str.split(data_path, "/")[-1]+"\\")[1], '.csv')[0]
         #patient_name = str.split(csv_files[i], '.csv')[0]
         patient_name = inds[i]
-        print(f"Processing patient: {patient_name}")
+        print(f"    Processing patient: {patient_name}")
         #
         # Extract cell embeddings
         patient_cell_emb = cell_encoded[start_idx:start_idx + n_cells]
@@ -253,7 +270,7 @@ else:
         #patient_name = str.split(str.split(csv_files[i], 'perez_')[1], '.csv')[0]
         #patient_name = str.split(str.split(csv_files[i], str.split(data_path, "/")[-1]+"\\")[1], '.csv')[0]
         patient_name = inds[i]
-        print(f"Processing patient (raw): {patient_name}")
+        print(f"    Processing patient (raw): {patient_name}")
         #
         # Extract raw cell data
         patient_cell_emb = torch.tensor(gene_cell[:, start_idx:start_idx + n_cells].T, dtype=torch.float32).to(device)
@@ -356,11 +373,11 @@ PK8_PRECIESADS.set_index('1', inplace=True)
 
 #args.dc_grn = 'False'
 # Process gene-gene connections for each patient
-for i, f in enumerate(csv_files):
+for i in range(len(inds)):
     #patient_name = str.split(str.split(f, 'perez_')[1], '.csv')[0]
     #patient_name = str.split(str.split(f, str.split(data_path, "/")[-1] + "\\")[1], '.csv')[0]
     patient_name = inds[i]
-    print(f"Calculating gene-gene connections for patient: {patient_name}")
+    print(f"    Calculating gene-gene connections for patient: {patient_name}")
     #
     # Load gene embeddings
     data_corr = patient_gene_embeddings[i].cpu().detach().numpy()
