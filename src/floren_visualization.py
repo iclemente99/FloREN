@@ -102,12 +102,17 @@ parser.add_argument('--n_heads', type=int, default=8 ,help='Number of attention 
 #parser.add_argument('--optimizer', type=str, default='adamw', help='optimizer')
 
 # Data directories
-parser.add_argument('--data_path', default='~/data', type=str, help='Path to adata object')
-parser.add_argument('--output_path', default='~/hgt_input', type=str, help='Path to folder with graph construction outputs')
+parser.add_argument('--data_path', default='./data/', type=str, help='Path to adata object')
+parser.add_argument('--output_path', default='~/floren_output/', type=str, help='Path to folder with graph construction outputs')
 #parser.add_argument('--cell_comm_path', default=None, type=str, help='Path to folder with cell-cell communication adjacency matrix')
 #parser.add_argument('--tfs', default=False, type=str, help='Option to work at tfs level')
 parser.add_argument('--result_dir', default=None, type=str, help='Path to folder with FloREN model outputs')
 #parser.add_argument('--metadata_path', default=None, type=str, help='Path to metadata file')
+parser.add_argument('--adata_path', default='./data/binvignat_example.h5ad', type=str, help='Path to adata object')
+parser.add_argument('--patient_id', default='patient_id', type=str,
+                    help='adata.obs column with the patient identifier')
+parser.add_argument('--metadata_group', default='disease', type=str,
+                    help='adata.obs column with the metadata group to differentiate')
 
 
 args = parser.parse_args()
@@ -119,17 +124,19 @@ os.makedirs(plots_dir, exist_ok=True)
 loss_dir = args.output_path + '/loss/'  # Sets directory for loss output
 patient_emb_dir = args.output_path + '/floren_patient_embeddings/'
 
+metadata_group = args.metadata_group
+patient_id = args.patient_id
 data_path = args.data_path
-inds = np.unique(adata.obs["patient_id"].values.astype(str))
-adata = sc.read_h5ad(data_path)
-metadata = adata.obs[["patient_id","group"]]
-metadata = metadata.groupby("patient_id").first().reset_index()
+inds = np.unique(adata.obs[patient_id].values.astype(str))
+adata = sc.read_h5ad(args.adata_path)
+metadata = adata.obs[[patient_id,metadata_group]]
+metadata = metadata.groupby(patient_id).first().reset_index()
 #metadata = pd.read_csv(args.metadata_path)
 #metadata = pd.read_csv("/Users/Inigo/Desktop/FloREN/Perez/samples_metadata_unique.csv")
 #metadata.columns = ["Unnamed: 0", "0", "patient_id", "group", "Age", "Sex", "Ethnicity", "Pool", "Batch", "Age_Group"]
 #metadata.columns = ["patient_id", "patient_num", "patient_ID", "group", "Age", "Sex", "Tissue"]
-metadata["group_txt"] = metadata["group"]
-metadata["group"] = metadata["group"].astype("category").cat.codes
+metadata["group_txt"] = metadata[metadata_group]
+metadata["group"] = metadata[metadata_group].astype("category").cat.codes
 #metadata["patient_id"] = "schafflick_" + metadata["patient_id"].astype(str)
 
 #data_path = args.data_path
@@ -242,7 +249,7 @@ for file in vector_files:
     #
     patient_id = m.group(1)  # e.g. "IGTB645_IGTB645"
     # Look up metadata row
-    row = metadata[metadata["patient_id"] == patient_id]
+    row = metadata[metadata[patient_id] == patient_id]
     if row.empty:
         print(f"Patient {patient_id} not found in metadata! Skipping...")
         continue
