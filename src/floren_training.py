@@ -84,7 +84,7 @@ parser.add_argument('--floren_grn', type=str, default='True', help='Decide if to
 
 # HGTGSSL
 parser.add_argument('--knn', type=float, default=30, help='Number of Nearest Neighbors to keep in KNN cell-gene calculation when --tfs = True ')
-parser.add_argument('--epoch', type=int, default=100)
+parser.add_argument('--epochs', type=int, default=100)
 parser.add_argument('--n_hid', type=int, default=128, help='Number of hidden dimension')
 parser.add_argument('--n_heads', type=int, default=8 ,help='Number of attention head')
 parser.add_argument('--n_layers', type=int, default=2, help='Number of GNN layers')
@@ -94,7 +94,7 @@ parser.add_argument('--batch_size', type=int, help='Number of output nodes for t
 parser.add_argument('--layer_type', type=str, default='hgt', help='the layer type for GAE')
 parser.add_argument('--loss', type=str, default='kl', help='the loss for GAE')
 parser.add_argument('--factor', type=float, default='0.5', help='the attenuation factor')
-parser.add_argument('--patience', type=int, default=5, help='patience')
+#parser.add_argument('--patience', type=int, default=5, help='patience')
 parser.add_argument('--rf', type=float, default='0.0', help='the weights of regularization')
 parser.add_argument('--cuda', type=int, default=1, help='cuda 0 use GPU0 else cpu')
 parser.add_argument('--rep', type=str, default='T', help='precision truncation')
@@ -105,12 +105,21 @@ parser.add_argument('--val_size', type=float, default=0.2, help='Size of validat
 parser.add_argument('--patience', type=float, default=30, help='patience for early stopping')
 
 # Data directories
-parser.add_argument('--data_path', default='~/data', type=str, help='Path to adata object')
-parser.add_argument('--output_path', default='~/hgt_input', type=str, help='Path to folder with graph construction outputs')
+parser.add_argument('--data_path', default='./data/', type=str, help='Path to FloREN data')
+parser.add_argument('--output_path', default='./floren_output', type=str, help='Path to folder with graph construction outputs')
 parser.add_argument('--cell_comm_path', default=None, type=str, help='Path to folder with cell-cell communication adjacency matrix')
 parser.add_argument('--tfs', default=False, type=str, help='Option to work at tfs level')
 parser.add_argument('--result_dir', default=None, type=str, help='Path to folder with FloREN model outputs')
 #parser.add_argument('--metadata_path', default=None, type=str, help='Path to metadata file')
+parser.add_argument('--patient_id', default='patient_id', type=str,
+                    help='adata.obs column with the patient identifier')
+parser.add_argument('--metadata_group', default='disease', type=str,
+                    help='adata.obs column with the metadata group to differentiate')
+parser.add_argument('--count_layer', default='logcounts', type=str,
+                    help='adata.layer name with the log normalized counts')
+parser.add_argument('--min_count', default=0, type=int,
+                    help='minimum count presence to have a cell-gene association')
+parser.add_argument('--adata_path', default='./data/binvignat_example.h5ad', type=str, help='Path to adata object')
 
 
 args = parser.parse_args()
@@ -130,6 +139,10 @@ args = parser.parse_args()
 # args.lr = 0.1 # Hyperparameter specification
 #args.lr = 0.0005  # Hyperparameter specification
 sample_name = args.data_name
+patient_id = args.patient_id
+count_layer = args.count_layer
+metadata_group = args.metadata_group
+min_count = args.min_count
 
 # Set up result directories
 #output_path = os.path.abspath(os.path.expanduser(args.output_path))
@@ -145,6 +158,7 @@ cell_embeddings_norm_path = os.path.join(embeddings_path, "cell_embeddings_norm"
 #os.makedirs(cell_embeddings_path, exist_ok=True)
 #os.makedirs(connections_path, exist_ok=True)
 
+print("Using device:")
 #args.cuda = 1
 # Set device
 if args.cuda == 0:
@@ -165,9 +179,10 @@ print(device)
 #
 #---------------------------------------------------------------
 
+print("Loading adata object")
 data_path = args.data_path
-adata = sc.read_h5ad(data_path)
-inds = np.unique(adata.obs["patient_id"].values.astype(str))
+adata = sc.read_h5ad(args.adata_path)
+inds = np.unique(adata.obs[patient_id].values.astype(str))
 #count_matrices_path = os.path.join(data_path, "count_matrices")
 #count_matrices_path = "/home/inigo/Desktop/FloREN3.0/Binvignat/genes/"
 #print(f"Looking for CSV files in: {data_path}")
@@ -207,10 +222,11 @@ patient_graphs = []
 from sklearn.metrics import pairwise_distances
 from scipy.sparse import lil_matrix
 
+print("\nGENERATING PATIENT GRAPHS")
 # for file in range(len(files)):
 for file_idx, patient_name in enumerate(files):
     # patient_name = files[file]
-    print(f"Processing patient: {patient_name}")
+    print(f"    Processing patient: {patient_name}")
     #
     # -------------------------
     # Gene-cell adjacency
@@ -219,10 +235,10 @@ for file_idx, patient_name in enumerate(files):
         #load_file = [f for f in csv_files if patient_name in f][0]
         #transformed_matrix = pd.read_csv(load_file)
         #transformed_matrix = transformed_matrix.iloc[:, 1:].values
-        adata_subset = adata[adata.obs['patient_id'].isin([patient_name])]
-        transformed_matrix = adata_subset.layers['logcounts'].A.T
+        adata_subset = adata[adata.obs[patient_id].isin([patient_name])]
+        transformed_matrix = adata_subset.layers[count_layer].A.T
         gene_cell = transformed_matrix
-        gene_cell[gene_cell >= 0] = 1
+        gene_cell[gene_cell >= min_count] = 1
         # gene_cell[gene_cell <= 5] = 0
     else:
         cells_files = pd.read_csv(os.path.join(cell_embeddings_norm_path, f"{patient_name}_AE_Emb_Cells.csv"))
@@ -348,13 +364,14 @@ print(device)  # Print device. IMPORTANT for incompatibilities.
 #metadata.columns = ["patient_id", "patient_num", "patient_ID", "group", "Age", "Sex", "Tissue"]
 #metadata["group"] = metadata["group"].astype("category").cat.codes
 #metadata["patient_id"] = "schafflick_" + metadata["patient_id"].astype(str)
-metadata = adata.obs[["patient_id","group"]]
-metadata = metadata.groupby("patient_id").first().reset_index()
-metadata["group"] = metadata["group"].astype("category").cat.codes
+print("Splitting in training and test")
+metadata = adata.obs[[patient_id,metadata_group]]
+metadata = metadata.groupby(patient_id).first().reset_index()
+metadata["group"] = metadata[metadata_group].astype("category").cat.codes
 
 def stratified_split_graphs(patient_graphs, metadata_df, test_size=0.15, val_size=0.15, random_state=42):
     # Make lookup from metadata
-    meta_lookup = dict(zip(metadata_df["patient_id"], metadata_df["group"]))
+    meta_lookup = dict(zip(metadata_df[patient_id], metadata_df["group"]))
     patient_names = [pg["name"] for pg in patient_graphs]
     labels = [meta_lookup[name] for name in patient_names]
     train_val_graphs, test_graphs, train_val_labels, test_labels = train_test_split(
@@ -463,7 +480,7 @@ torch.manual_seed(random_seed)
 np.random.seed(random_seed)
 
 
-def pregenerate_jobs(graphs, csv_files, gene_rate, cell_rate, device):
+def pregenerate_jobs(graphs, gene_rate, cell_rate, device):
     jobs_dict = {}
     for patient in graphs:
         patient_name = patient['name']
@@ -472,8 +489,8 @@ def pregenerate_jobs(graphs, csv_files, gene_rate, cell_rate, device):
         #load_file = [f for f in csv_files if patient_name in f][0]
         #transformed_matrix = pd.read_csv(load_file)
         #transformed_matrix = transformed_matrix.iloc[:, 1:].values
-        adata_subset = adata[adata.obs['patient_id'].isin([patient_name])]
-        transformed_matrix = adata_subset.layers['logcounts'].A.T
+        adata_subset = adata[adata.obs[patient_id].isin([patient_name])]
+        transformed_matrix = adata_subset.layers[count_layer].A.T
         gene_cell = transformed_matrix
         #
         # Generate jobs
@@ -544,8 +561,8 @@ def pregenerate_jobs(graphs, csv_files, gene_rate, cell_rate, device):
 print("Pre-generating and formatting jobs...")
 #args.gene_rate = 0.1
 #args.cell_rate = 0.1
-train_jobs = pregenerate_jobs(train_graphs, csv_files, args.gene_rate, args.cell_rate, device)
-val_jobs = pregenerate_jobs(val_graphs, csv_files, args.gene_rate, args.cell_rate, device)
+train_jobs = pregenerate_jobs(train_graphs, args.gene_rate, args.cell_rate, device)
+val_jobs = pregenerate_jobs(val_graphs, args.gene_rate, args.cell_rate, device)
 # print("Pre-generated and formatted jobs for all patients")
 debuginfoStr('Pre-generated and formatted jobs for all patients')
 # model0 = f'Perez_epoch_{args.epoch}_n_hid_{args.n_hid}_nheads_{args.n_heads}_lr_01_n_batch{args.n_batch}'
@@ -554,7 +571,25 @@ debuginfoStr('Pre-generated and formatted jobs for all patients')
 # Move GNN to device
 gnn.to(device)
 
+import psutil
+import torch
+import os
+def get_memory_usage():
+    # System RAM in GB
+    process = psutil.Process(os.getpid())
+    mem_gb = process.memory_info().rss / (1024 ** 3)
+    # GPU RAM in GB (if using CUDA)
+    gpu_mem_gb = 0
+    if torch.cuda.is_available():
+        gpu_mem_gb = torch.cuda.max_memory_allocated() / (1024 ** 3)
+        # Reset the peak monitor so we see the max per epoch
+        torch.cuda.reset_peak_memory_stats()
+    #
+    return mem_gb, gpu_mem_gb
+
+print("\nSTARTING FLOREN TRAINING")
 # Training loop
+loop_start = time.time()
 for epoch in range(nb_epochs):
     epoch_start = time.time()
     gnn.train()
@@ -566,7 +601,7 @@ for epoch in range(nb_epochs):
     for patient in train_graphs:
         patient_name = patient['name']
         # print(f"Processing patient: {patient_name}")
-        grp = metadata.loc[metadata['patient_id'] == patient_name, 'group'].values
+        grp = metadata.loc[metadata[patient_id] == patient_name, 'group'].values
         if len(grp) == 0:
             raise ValueError(f"Patient {patient_name} not found in metadata")
         group_id = int(grp[0])
@@ -626,7 +661,7 @@ for epoch in range(nb_epochs):
     with torch.no_grad():
         for patient in val_graphs:
             patient_name = patient['name']
-            grp = metadata.loc[metadata['patient_id'] == patient_name, 'group'].values
+            grp = metadata.loc[metadata[patient_id] == patient_name, 'group'].values
             if len(grp) == 0:
                 raise ValueError(f"Patient {patient_name} not found in metadata")
             group_id = int(grp[0])
@@ -743,8 +778,16 @@ loss_history = pd.DataFrame({
 model0 = f'{args.data_name}_epoch_{args.epoch}_n_hid_{args.n_hid}_nheads_{args.n_heads}_lr_01_n_batch{args.n_batch}'
 loss_history.to_csv(os.path.join(loss_dir, model0 + ".csv"), index=False)
 
-debuginfoStr('Graph Embedding training finished')
+debuginfoStr('FloREN training finished')
 
+ram_usage, vram_usage = get_memory_usage()
+# Update your Print summary
+print(f"Epoch {epoch + 1}/{nb_epochs} | "
+      f"Train loss: {epoch_total:.4f} | "
+      f"Val loss: {val_total:.4f} | "
+      f"RAM: {ram_usage:.2f}GB | "   # New
+      f"VRAM: {vram_usage:.2f}GB | " # New
+      f"Time: {(time.time() - loop_start) / 60:.1f} min")
 # end of epochs
 # if best_model_state is not None:
 #    gnn.load_state_dict(best_model_state)
@@ -771,10 +814,12 @@ gene_dir = args.result_dir + '/floren_gene_embeddings/'
 cell_dir = args.result_dir + '/floren_cell_embeddings/'
 att_dir = args.result_dir + '/floren_attention_embeddings/'
 patient_emb_dir = args.result_dir + '/floren_patient_embeddings/'
+patient_emb_dir_split = args.result_dir + '/floren_patient_embeddings/split/'
 os.makedirs(gene_dir, exist_ok=True)
 os.makedirs(cell_dir, exist_ok=True)
 os.makedirs(att_dir, exist_ok=True)
 os.makedirs(patient_emb_dir, exist_ok=True)
+os.makedirs(patient_emb_dir_split, exist_ok=True)
 
 # Load metadata
 # metadata = pd.read_csv("/home/inigo/Desktop/FloREN3.0/Binvignat/metadata_updated.csv")
@@ -790,7 +835,7 @@ os.makedirs(patient_emb_dir, exist_ok=True)
 state = torch.load(model_dir + model0, map_location=lambda storage, loc: storage)  # Loads model
 print(f"Loaded model from {model_dir + model0}")
 
-test_jobs = pregenerate_jobs(test_graphs, csv_files, args.gene_rate, args.cell_rate, device)
+test_jobs = pregenerate_jobs(test_graphs, args.gene_rate, args.cell_rate, device)
 
 # Initialize GNN model
 gnn = GNN(
@@ -812,10 +857,11 @@ gnn.eval()
 all_graphs = train_graphs + val_graphs + test_graphs
 all_jobs = {**train_jobs, **val_jobs, **test_jobs}  # Combine train_jobs and val_jobs
 
+print("\nSAVING PATIENT REPRESENTATIONS")
 # Process each patient
 for patient in all_graphs:
     patient_name = patient['name']
-    print(f"Processing patient: {patient_name}")
+    print(f"    Saving patient: {patient_name}")
     # Get pre-formatted job for full graph
     #gnn_input = all_jobs[patient_name][0]  # Use first job (full graph)
     gnn_input = all_jobs[patient_name]
@@ -852,11 +898,12 @@ for patient in all_graphs:
     df2 = pd.concat([positions, df], axis=1)
     df2.to_csv(os.path.join(att_dir, f"{patient_name}_edge_att.csv"), sep=",", index=True)
     # Save cell embeddings
+    adata_subset = adata[adata.obs[patient_id].isin([patient_name])]
     #np.savetxt(os.path.join(cell_dir, f"{patient_name}_cell_embs.csv"), cell_embs, delimiter=",")
     pd.DataFrame(cell_embs, index=adata_subset.obs_names).to_csv(os.path.join(cell_dir, f"{patient_name}_cell_embs.csv"))
     # Save gene embeddings
     #np.savetxt(os.path.join(gene_dir, f"{patient_name}_gene_embs.csv"), gene_embs, delimiter=",")
-    pd.DataFrame(gene_embs, index=adata_subset.obs_names).to_csv(os.path.join(gene_dir, f"{patient_name}_gene_embs.csv"))
+    pd.DataFrame(gene_embs, index=adata_subset.var_names).to_csv(os.path.join(gene_dir, f"{patient_name}_gene_embs.csv"))
     # Save node attentions
     num_nodes = gnn_input[0][0].shape[0]
     node_attention = np.zeros(num_nodes, dtype=np.float64)
@@ -869,8 +916,8 @@ for patient in all_graphs:
     os.makedirs(patient_out, exist_ok=True)
     #np.savetxt(os.path.join(patient_out, "genes_atts.csv"), genes_grad, delimiter=",")
     #np.savetxt(os.path.join(patient_out, "cells_atts.csv"), cells_grad, delimiter=",")
-    pd.DataFrame(genes_grad, index=adata_subset.obs_names).to_csv(os.path.join(patient_out, "genes_atts.csv"))
-    pd.DataFrame(cells_grad, index=adata_subset.var_names).to_csv(os.path.join(patient_out, "cells_atts.csv"))
+    pd.DataFrame(genes_grad, index=adata_subset.var_names).to_csv(os.path.join(patient_out, "genes_atts.csv"))
+    pd.DataFrame(cells_grad, index=adata_subset.obs_names).to_csv(os.path.join(patient_out, "cells_atts.csv"))
     # Save patient embeddings
     np.savetxt(os.path.join(patient_emb_dir_split, f"{patient_name}_emb_ssl.csv"), emb_104, delimiter=",")
     np.savetxt(os.path.join(patient_emb_dir_split, f"{patient_name}_emb_g32.csv"), g_32, delimiter=",")
