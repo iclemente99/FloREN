@@ -98,7 +98,7 @@ This step will train the model and save all the results: patient embeddings, cel
 ```bash
 
 # Run floren_training.py
-python src/floren_training.py
+python src/floren_training.py \
   --adata_path './data/binvignat_example.h5ad' \
   --result_dir './floren_output/' \
   --epcohs 100 \
