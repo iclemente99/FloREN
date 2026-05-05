@@ -24,8 +24,8 @@ import warnings
 #
 ##############################################################
 
-DATA = pd.read_csv("C:/Users/Inigo/Documents/PRECISESADS_DATA/WHOLE_BLOOD_ALL.tsv", sep='\t') # Load RNAseq raw counts database
-LABELS = pd.read_csv("C:/Users/Inigo/Documents/PRECISESADS_DATA/CS.QC.Info.csv", sep=';') # Load metadata from precieseads
+DATA = pd.read_csv("Path_to_WHOLE_BLOOD_ALL.tsv", sep='\t') # Load RNAseq raw counts database
+LABELS = pd.read_csv("Path_to_QC_Info.csv", sep=';') # Load metadata from precieseads
 
 
 
