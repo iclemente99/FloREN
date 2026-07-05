@@ -1,7 +1,7 @@
 # FloREN: An Interpretable Sample Representation Method to unveil immune networks through Graph Transformers
 
 <p align="center">
-  <img src="docs/florenpy.png" width="600">
+  <img src="docs/florenv.png" width="600">
 </p>
 
 
