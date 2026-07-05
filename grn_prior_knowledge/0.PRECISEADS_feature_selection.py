@@ -114,7 +114,7 @@ RelieF_named = np.vstack([RelieF, X_train.index.values]) # Labels the features
 Relief_named_filtered = RelieF_named[:,relief_scores>0.1155] # Filters the features by cutoff
 
 # SAVE RELIEF SUBSET
-pd.DataFrame(Relief_named_filtered).to_csv("C:/Users/Inigo/Documents/relief_variables.csv")
+pd.DataFrame(Relief_named_filtered).to_csv("relief_variables.csv")
 
 
 
