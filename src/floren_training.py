@@ -333,7 +333,7 @@ debuginfoStr('Build Graph finished')
 # args.n_batch = 32 # Hyperparameter specification
 # sample_name = re.split('TFs_',tfs_files[file],2)[-1][:re.split('TFs_',tfs_files[file],2)[-1].index(".")]
 #sample_name = "Perez"
-file0 = f'sample_{sample_name}_epoch_{args.epoch}_n_hid_{args.n_hid}_nheads_{args.n_heads}_lr_01_n_batch{args.n_batch}'  # Text saving hypermarametrization
+file0 = f'sample_{sample_name}_epoch_{args.epochs}_n_hid_{args.n_hid}_nheads_{args.n_heads}_lr_01_n_batch{args.n_batch}'  # Text saving hypermarametrization
 # print(f'\n{file0}') #Print hyperparametrization
 #args.result_dir = '/Users/Inigo/Desktop/FloREN3.0/perez_output'  # Sets parent directory for output
 args.result_dir = args.output_path
@@ -441,7 +441,7 @@ contrastive_loss_fn = nn.BCEWithLogitsLoss()  # Load Self-supervised loss for cl
 classification_loss_fn = nn.CrossEntropyLoss()  # Load Cross Entropy loss for classification learning
 
 # --- Hyperparams for dynamic multi-tasking & early stopping
-nb_epochs = args.epoch
+nb_epochs = args.epochs
 weight_contrastive = 0.1
 weight_classification = 0.9
 #first_cutoff = False
@@ -730,7 +730,7 @@ for epoch in range(nb_epochs):
             'optimizer': scheduler.state_dict(),
             'epoch': epoch
         }
-        model0 = f'{args.data_name}_epoch_{args.epoch}_n_hid_{args.n_hid}_nheads_{args.n_heads}_lr_01_n_batch{args.n_batch}'
+        model0 = f'{args.data_name}_epoch_{args.epochs}_n_hid_{args.n_hid}_nheads_{args.n_heads}_lr_01_n_batch{args.n_batch}'
         os.makedirs(model_dir, exist_ok=True)
         torch.save(state, os.path.join(model_dir, model0))
     else:
@@ -745,7 +745,7 @@ for epoch in range(nb_epochs):
             'optimizer': scheduler.state_dict(),
             'epoch': epoch
         }
-        model0 = f'{args.data_name}_epoch_{args.epoch}_n_hid_{args.n_hid}_nheads_{args.n_heads}_lr_01_n_batch{args.n_batch}'
+        model0 = f'{args.data_name}_epoch_{args.epochs}_n_hid_{args.n_hid}_nheads_{args.n_heads}_lr_01_n_batch{args.n_batch}'
         os.makedirs(model_dir, exist_ok=True)
         torch.save(state, os.path.join(model_dir, model0))
         print("Classification loss reached zero. Stopping early.")
@@ -757,7 +757,7 @@ for epoch in range(nb_epochs):
             'optimizer': scheduler.state_dict(),
             'epoch': epoch
         }
-        model0 = f'{args.data_name}_epoch_{args.epoch}_n_hid_{args.n_hid}_nheads_{args.n_heads}_lr_01_n_batch{args.n_batch}'
+        model0 = f'{args.data_name}_epoch_{args.epochs}_n_hid_{args.n_hid}_nheads_{args.n_heads}_lr_01_n_batch{args.n_batch}'
         os.makedirs(model_dir, exist_ok=True)
         torch.save(state, os.path.join(model_dir, model0))
         print("Loss balanced. Stopping early.")
@@ -775,7 +775,7 @@ loss_history = pd.DataFrame({
     "train_classification": classification_losses,
     "val_total": validation_losses
 })
-model0 = f'{args.data_name}_epoch_{args.epoch}_n_hid_{args.n_hid}_nheads_{args.n_heads}_lr_01_n_batch{args.n_batch}'
+model0 = f'{args.data_name}_epoch_{args.epochs}_n_hid_{args.n_hid}_nheads_{args.n_heads}_lr_01_n_batch{args.n_batch}'
 loss_history.to_csv(os.path.join(loss_dir, model0 + ".csv"), index=False)
 
 debuginfoStr('FloREN training finished')
@@ -796,7 +796,7 @@ print(f"Epoch {epoch + 1}/{nb_epochs} | "
 
 state = {'model': gnn.state_dict(), 'optimizer': scheduler.state_dict(),
          'epoch': epoch}  # Saves a dictionary of model
-model0 = f'Final_{args.data_name}_epoch_{args.epoch}_n_hid_{args.n_hid}_nheads_{args.n_heads}_lr_01_n_batch{args.n_batch}'
+model0 = f'Final_{args.data_name}_epoch_{args.epochs}_n_hid_{args.n_hid}_nheads_{args.n_heads}_lr_01_n_batch{args.n_batch}'
 torch.save(state, model_dir + model0)  # Saves model in folder
 # pd.DataFrame(training_loss).to_csv(loss_dir+model0+".csv")
 #debuginfoStr('Graph Embedding training finished')
@@ -891,7 +891,7 @@ for patient in all_graphs:
     # Prepare patient embedding
     patient_embedding = np.concatenate([emb_104, g_32, l_32, g_64, l_64, g_128, l_128, ret_class], axis=0)  # [552]
     # Save results
-    file_name = f'sample_{patient_name}_epoch_{args.epoch}_n_hid_{args.n_hid}_nheads_{args.n_heads}_lr_01_n_batch{args.n_batch}'
+    file_name = f'sample_{patient_name}_epoch_{args.epochs}_n_hid_{args.n_hid}_nheads_{args.n_heads}_lr_01_n_batch{args.n_batch}'
     # Save edge atts
     positions = pd.DataFrame(gnn_input[0][3].T)
     df = pd.DataFrame(att_final)
