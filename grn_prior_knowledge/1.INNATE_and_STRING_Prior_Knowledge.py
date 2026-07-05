@@ -24,7 +24,7 @@ warnings.filterwarnings("ignore")
 #
 ##############################################################
 
-Relief_variables = pd.read_csv("C:/Users/Inigo/Documents/relief_variables.csv", sep=',') # Loads the selection of genes
+Relief_variables = pd.read_csv("relief_variables.csv", sep=',') # Loads the selection of genes
 IDs = Relief_variables.drop('Unnamed: 0', axis=1).iloc[1,] # Keeps only the gene IDs
 
 Prior_knowledge = pd.DataFrame(0, index=IDs, columns=IDs) # Generate the dataframe filled with 0 to save the prior knowledge gene interactions
@@ -132,7 +132,7 @@ with ThreadPoolExecutor() as executor: # Executes parallel processing
 
 #sum(Prior_knowledge.sum(axis=1)) # Check for interaction detections
 #Prior_knowledge.sum(axis=1) # Check for interactions distribution
-Prior_knowledge.to_csv("C:/Users/Inigo/Documents/PK_final.csv") # Save table with indexes and colnames in csv
+Prior_knowledge.to_csv("PK_final.csv") # Save table with indexes and colnames in csv
 
 ##############################################################
 #
@@ -140,7 +140,7 @@ Prior_knowledge.to_csv("C:/Users/Inigo/Documents/PK_final.csv") # Save table wit
 #
 ##############################################################
 
-file_paths = ["C:/Users/Inigo/Documents/PK_final_{}.csv".format(i) for i in range(2000, 20001, 2000)] # Directory to all tables
+file_paths = ["PK_final_{}.csv".format(i) for i in range(2000, 20001, 2000)] # Directory to all tables
 PK_tables = [pd.read_csv(file_path, sep=',') for file_path in file_paths] # Load all tables
 PK_table = pd.concat(PK_tables) # Merge all tables
 Prior_knowledge_PRECISEADS = PK_table.set_index(PK_table.columns[0]) # Set IDsas indexes
