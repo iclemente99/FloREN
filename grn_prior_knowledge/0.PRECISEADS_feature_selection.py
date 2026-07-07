@@ -91,7 +91,7 @@ reliefFS.fit(x_train,y_train) # Apply RelieF to data
 relief_scores = reliefFS.feature_importances_ # Extract feature importance
 
 # SAVE RELIEF SCORES
-savetxt('C:/Users/Inigo/Documents/relief_scores.tsv', relief_scores, delimiter='\t')
+savetxt('relief_scores.tsv', relief_scores, delimiter='\t')
 
 
 

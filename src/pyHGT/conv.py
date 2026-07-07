@@ -56,9 +56,7 @@ class HGTConv(MessagePassing):
         glorot(self.relation_msg)
      
     def _initialize_weights(self):
-
         for m in self.modules():
-            print(m)
             if isinstance(m, nn.Linear):
                 torch.nn.init.xavier_uniform_(m.weight, gain=1)
 

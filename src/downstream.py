@@ -74,9 +74,7 @@ def plot_celltype_saliency_ranking(
         "celltype": adata.obs[celltype_col].astype(str).values,
         "patient": adata.obs[sample_col].astype(str).values,
     }, index=adata.obs.index)
-    meta["barcode"] = (
-        meta["patient"] + "__" + meta["patient"] + "_" + meta["celltype"] + "_" + meta.index
-    )
+    meta["barcode"] = meta["patient"] + "__" + meta.index.astype(str)
 
     # ---- per-patient cell-type saliency ----
     all_patients_cell_df = []
@@ -235,9 +233,7 @@ def plot_celltype_gene_signatures(
         "celltype": adata.obs[celltype_col].astype(str).values,
         "patient": adata.obs[sample_col].astype(str).values,
     }, index=adata.obs.index)
-    meta["barcode"] = (
-        meta["patient"] + "__" + meta["patient"] + "_" + meta["celltype"] + "_" + meta.index
-    )
+    meta["barcode"] = meta["patient"] + "__" + meta.index.astype(str)
 
     if cell_types is None:
         cell_types = sorted(meta["celltype"].unique().tolist())
@@ -460,9 +456,7 @@ def plot_celltype_differential_abundance(
         "celltype": adata.obs[celltype_col].astype(str).values,
         "patient": adata.obs[sample_col].astype(str).values,
     }, index=adata.obs.index)
-    meta["barcode"] = (
-        meta["patient"] + "__" + meta["patient"] + "_" + meta["celltype"] + "_" + meta.index
-    )
+    meta["barcode"] = meta["patient"] + "__" + meta.index.astype(str)
 
     # ---- per-patient cell-type saliency ----
     all_patients_cell_df = []
@@ -1156,7 +1150,7 @@ def plot_celltype_niche_heatmaps(
         raise ValueError("group_assignment must be a dict or (match_condition, [label, label]) tuple")
 
     # ---- metadata ----
-    adata = sc.read(h5ad_path)
+    adata = sc.read_h5ad(h5ad_path)
     meta_full = adata.obs[[patient_col, celltype_col]].copy()
     meta_full.columns = ["patient", "celltype"]
 

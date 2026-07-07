@@ -56,7 +56,7 @@ def feature_OAG(layer_data, graph):
         tims  = np.array(list(layer_data[_type].values()))[:,1]
         
         if 'node_emb' in graph.node_feature[_type]:
-            feature[_type] = np.array(list(graph.node_feature[_type].loc[idxs, 'node_emb']), dtype=np.float)
+            feature[_type] = np.array(list(graph.node_feature[_type].loc[idxs, 'node_emb']), dtype=float)
         else:
             feature[_type] = np.zeros([len(idxs), 400])
         feature[_type] = np.concatenate((feature[_type], list(graph.node_feature[_type].loc[idxs, 'emb']),\
@@ -66,5 +66,5 @@ def feature_OAG(layer_data, graph):
         indxs[_type]   = idxs
         
         if _type == 'paper':
-            texts = np.array(list(graph.node_feature[_type].loc[idxs, 'title']), dtype=np.str)
+            texts = np.array(list(graph.node_feature[_type].loc[idxs, 'title']), dtype=str)
     return feature, times, indxs, texts
