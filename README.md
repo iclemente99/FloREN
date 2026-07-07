@@ -140,6 +140,7 @@ Import them directly in a Python script or Jupyter notebook — no extra trainin
 | `plot_celltype_niche_heatmaps` | Computes within- and cross-group cell-type niche similarity heatmaps |
 | `plot_grn_leiden_network` | Builds gene co-attention networks and detects Leiden modules per group |
 | `plot_celltype_attention_heatmaps` | Plots cell-type × cell-type edge-attention matrices side by side for two groups |
+| `plot_attention_network_heatmap` | Plots cell-types and top genes attention network |
 
 **Example — rank cell types by saliency:**
 
