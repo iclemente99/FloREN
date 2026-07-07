@@ -139,6 +139,7 @@ Import them directly in a Python script or Jupyter notebook — no extra trainin
 | `run_differential_gene_expression` | Compares gene embedding shift between groups; outputs a volcano plot |
 | `plot_celltype_niche_heatmaps` | Computes within- and cross-group cell-type niche similarity heatmaps |
 | `plot_grn_leiden_network` | Builds gene co-attention networks and detects Leiden modules per group |
+| `plot_celltype_attention_heatmaps` | Plots cell-type × cell-type edge-attention matrices side by side for two groups |
 
 **Example — rank cell types by saliency:**
 
@@ -181,6 +182,32 @@ results_df, all_cells = plot_celltype_differential_abundance(
 significant = results_df[results_df["p_adj"] < 0.05].sort_values("p_adj")
 print(significant[["celltype", "p_adj", "Disease_median", "Control_median"]])
 ```
+
+**Example — cell-type × cell-type attention heatmaps:**
+
+```python
+import scanpy as sc
+from downstream import plot_celltype_attention_heatmaps
+
+adata = sc.read_h5ad("./data/binvignat_example.h5ad")
+meta = adata.obs[["Celltype.Lev1.manuscript", "patient_id"]].copy()
+meta.columns = ["celltype", "patient"]
+meta["barcode"] = meta["patient"] + "__" + adata.obs_names
+
+matrices = plot_celltype_attention_heatmaps(
+    att_dir          = "./floren_output/floren_attention_embeddings",
+    cell_names_path  = "./floren_output/All_AUC_Cell_names.csv",
+    meta             = meta.reset_index(drop=True),
+    gene_names       = list(adata.var_names),
+    group_assignment = {"patient_A": "Disease", "patient_B": "Control"},
+    # alternatively: ("MS", ["MS", "HC"])
+    output_pdf       = "./floren_output/plots/celltype_attention_heatmaps.pdf",
+)
+# matrices is a dict {group_label: pd.DataFrame (celltype x celltype)}
+```
+
+The function saves a two-panel PDF with a shared color scale — one heatmap per group — and
+returns the underlying DataFrames for further analysis.
 
 ## ✍️ Citation & Acknowledgements
 

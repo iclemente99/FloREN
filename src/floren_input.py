@@ -17,6 +17,14 @@ import torch
 from warnings import filterwarnings
 filterwarnings("ignore")
 
+def _t2np(t):
+    """Tensor → numpy, compatible with numpy 1.x and 2.x."""
+    t = t.detach().cpu().float()
+    try:
+        return t.numpy()
+    except RuntimeError:
+        return np.asarray(t)  # uses __array__ protocol, bypasses torch numpy bridge
+
 from reduction_leaky import reduction, apply_AE
 from utils import debuginfoStr, build_graph
 from sub_sample import sub_sample
@@ -133,7 +141,8 @@ gene_cell = np.zeros((n_genes, total_cells), dtype=np.float32)
 col = 0
 for ind in range(len(inds)):
     adata_subset = adata[adata.obs[patient_id].isin([inds[ind]])]
-    f_matrix = adata_subset.layers[count_layer].A.astype(np.float32).T  # [n_genes, n_cells]
+    _layer = adata_subset.layers[count_layer]
+    f_matrix = (_layer.toarray() if hasattr(_layer, "toarray") else np.asarray(_layer)).astype(np.float32).T
     n_c = f_matrix.shape[1]
     gene_cell[:, col:col + n_c] = f_matrix
     col += n_c
@@ -185,7 +194,7 @@ if args.reduction == 'AE':
         patient_cell_emb = cell_encoded[start_idx:start_idx + n_cells]
         patient_cell_embeddings.append(patient_cell_emb)
         cell_embedding_file = os.path.join(cell_embeddings_path, f"{patient_name}_AE_Emb_Cells.csv")
-        pd.DataFrame(patient_cell_emb.cpu().detach().numpy(), index=patient_cells).to_csv(cell_embedding_file)
+        pd.DataFrame(_t2np(patient_cell_emb), index=patient_cells).to_csv(cell_embedding_file)
         start_idx += n_cells
 
         # I1 — fill patient columns, use, then reset (reuses buffer instead of allocating each iteration)
@@ -197,7 +206,7 @@ if args.reduction == 'AE':
 
         patient_gene_embeddings.append(gene_encoded)
         gene_embedding_file = os.path.join(gene_embeddings_path, f"{patient_name}_AE_Emb_Genes.csv")
-        pd.DataFrame(gene_encoded.cpu().detach().numpy(), index=gene_names).to_csv(gene_embedding_file)
+        pd.DataFrame(_t2np(gene_encoded), index=gene_names).to_csv(gene_embedding_file)
 else:
     start_idx = 0
     for i, (patient_cells, n_cells) in enumerate(zip(cells, cell_counts)):
@@ -207,12 +216,12 @@ else:
         patient_cell_emb = torch.tensor(gene_cell[:, start_idx:start_idx + n_cells].T, dtype=torch.float32).to(device)
         patient_cell_embeddings.append(patient_cell_emb)
         cell_embedding_file = os.path.join(cell_embeddings_path, f"{patient_name}_Raw_Emb_Cells.csv")
-        pd.DataFrame(patient_cell_emb.cpu().detach().numpy(), index=patient_cells).to_csv(cell_embedding_file)
+        pd.DataFrame(_t2np(patient_cell_emb), index=patient_cells).to_csv(cell_embedding_file)
 
         patient_gene_emb = torch.tensor(gene_cell[:, start_idx:start_idx + n_cells], dtype=torch.float32).to(device)
         patient_gene_embeddings.append(patient_gene_emb)
         gene_embedding_file = os.path.join(gene_embeddings_path, f"{patient_name}_Raw_Emb_Genes.csv")
-        pd.DataFrame(patient_gene_emb.cpu().detach().numpy(), index=gene_names).to_csv(gene_embedding_file)
+        pd.DataFrame(_t2np(patient_gene_emb), index=gene_names).to_csv(gene_embedding_file)
 
         start_idx += n_cells
 
@@ -231,8 +240,8 @@ os.makedirs(cell_embeddings_norm_path, exist_ok=True)
 
 print("Starting GLOBAL normalization of all patient embeddings...")
 
-all_gene_np = [emb.cpu().detach().numpy() for emb in patient_gene_embeddings]
-all_cell_np = [emb.cpu().detach().numpy() for emb in patient_cell_embeddings]
+all_gene_np = [_t2np(emb) for emb in patient_gene_embeddings]
+all_cell_np = [_t2np(emb) for emb in patient_cell_embeddings]
 
 all_genes_concat = np.vstack(all_gene_np)
 all_cells_concat = np.vstack(all_cell_np)
@@ -268,9 +277,9 @@ for i in range(len(patient_gene_embeddings)):
     normalized_patient_gene_embeddings.append(gene_tensor)
     normalized_patient_cell_embeddings.append(cell_tensor)
 
-    pd.DataFrame(gene_tensor.cpu().numpy(), index=gene_names).to_csv(
+    pd.DataFrame(_t2np(gene_tensor), index=gene_names).to_csv(
         os.path.join(gene_embeddings_norm_path, f"{patient_name}_AE_Emb_Genes.csv"))
-    pd.DataFrame(cell_tensor.cpu().numpy(), index=cells[i]).to_csv(
+    pd.DataFrame(_t2np(cell_tensor), index=cells[i]).to_csv(
         os.path.join(cell_embeddings_norm_path, f"{patient_name}_AE_Emb_Cells.csv"))
 
     g_idx = g_end
@@ -293,7 +302,7 @@ for i in range(len(inds)):
     patient_name = inds[i]
     print(f"    Calculating gene-gene connections for patient: {patient_name}")
 
-    data_corr = patient_gene_embeddings[i].cpu().detach().numpy()
+    data_corr = _t2np(patient_gene_embeddings[i])
 
     if args.dc_grn == 'True':
         dcorr_matrix = np.zeros((data_corr.shape[0], data_corr.shape[0]))
@@ -313,7 +322,7 @@ for i in range(len(inds)):
 
     DC8_PRECIESADS = pd.DataFrame(dcorr_matrix, index=gene_names, columns=gene_names)
     inter_names = list(set(DC8_PRECIESADS.columns).intersection(set(PK8_PRECIESADS.columns)))
-    PK8_subset = PK8_PRECIESADS[PK8_PRECIESADS.index.isin(inter_names)][inter_names]
+    PK8_subset = PK8_PRECIESADS[PK8_PRECIESADS.index.isin(inter_names)][inter_names].reindex(inter_names, fill_value=0)
     notinter_names = set(inter_names) ^ set(DC8_PRECIESADS.columns)
     empties = pd.DataFrame(np.zeros((len(notinter_names), PK8_subset.shape[0])), columns=PK8_subset.index)
     PK8_subset = pd.concat([PK8_subset, empties])

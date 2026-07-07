@@ -22,6 +22,14 @@ filterwarnings("ignore")
 
 from sklearn.model_selection import train_test_split
 
+def _t2np(t):
+    """Tensor → numpy, compatible with numpy 1.x and 2.x."""
+    t = t.detach().cpu().float()
+    try:
+        return t.numpy()
+    except RuntimeError:
+        return np.asarray(t)
+
 import scanpy as sc
 import psutil
 
@@ -168,7 +176,8 @@ for patient_name in files:
 
     # Gene-cell adjacency: binarize expression matrix by count threshold
     adata_subset = adata[adata.obs[patient_id].isin([patient_name])]
-    transformed_matrix = adata_subset.layers[count_layer].A.T.copy()
+    _layer = adata_subset.layers[count_layer]
+    transformed_matrix = (_layer.toarray() if hasattr(_layer, "toarray") else np.asarray(_layer)).T.copy()
     gene_cell = transformed_matrix
     gene_cell[gene_cell > min_count] = 1   # strictly greater than: zeros stay zero
     gene_cell[gene_cell <= min_count] = 0
@@ -265,14 +274,18 @@ def stratified_split_graphs(patient_graphs, metadata_df, test_size=0.15, val_siz
     meta_lookup = dict(zip(metadata_df[patient_id], metadata_df["group"]))
     patient_names = [pg["name"] for pg in patient_graphs]
     labels = [meta_lookup[name] for name in patient_names]
+    n_classes = len(set(labels))
+    # Fall back to non-stratified split if dataset is too small for stratified sampling
+    use_stratify = int(len(labels) * test_size) >= n_classes
     train_val_graphs, test_graphs, train_val_labels, test_labels = train_test_split(
         patient_graphs, labels,
-        test_size=test_size, stratify=labels, random_state=random_state
+        test_size=test_size, stratify=labels if use_stratify else None, random_state=random_state
     )
     relative_val_size = val_size / (1 - test_size)
+    use_stratify_val = int(len(train_val_labels) * relative_val_size) >= n_classes
     train_graphs, val_graphs, train_labels, val_labels = train_test_split(
         train_val_graphs, train_val_labels,
-        test_size=relative_val_size, stratify=train_val_labels, random_state=random_state
+        test_size=relative_val_size, stratify=train_val_labels if use_stratify_val else None, random_state=random_state
     )
     return train_graphs, val_graphs, test_graphs
 
@@ -354,7 +367,8 @@ def save_jobs_to_disk(graphs, gene_rate, cell_rate, cache_dir):
 
         graph = patient['graph']
         adata_subset = adata[adata.obs[patient_id].isin([patient_name])]
-        transformed_matrix = adata_subset.layers[count_layer].A.T
+        _layer = adata_subset.layers[count_layer]
+        transformed_matrix = (_layer.toarray() if hasattr(_layer, "toarray") else np.asarray(_layer)).T
         gene_cell = transformed_matrix
 
         jobs = []
@@ -462,8 +476,7 @@ for epoch in range(nb_epochs):
         if len(grp) == 0:
             raise ValueError(f"Patient {patient_name} not found in metadata")
         group_id = int(grp[0])
-        labels_class = torch.zeros(num_groups, device=device)
-        labels_class[group_id] = 1.0
+        labels_class = torch.tensor([group_id], device=device, dtype=torch.long)
 
         gnn_input = load_patient_jobs(patient_name, job_cache_dir, device)
 
@@ -480,7 +493,7 @@ for epoch in range(nb_epochs):
             lbl = torch.cat((lbl_1, lbl_2), dim=1)
 
             contrastive_loss = contrastive_loss_fn(logits, lbl)
-            classification_loss = classification_loss_fn(ret_class, labels_class)
+            classification_loss = classification_loss_fn(ret_class.view(1, -1), labels_class)
             loss = weight_contrastive * contrastive_loss + weight_classification * classification_loss
 
         optimizer.zero_grad()
@@ -520,8 +533,7 @@ for epoch in range(nb_epochs):
             if len(grp) == 0:
                 raise ValueError(f"Patient {patient_name} not found in metadata")
             group_id = int(grp[0])
-            labels_class = torch.zeros(num_groups, device=device)
-            labels_class[group_id] = 1.0
+            labels_class = torch.tensor([group_id], device=device, dtype=torch.long)
 
             gnn_input = load_patient_jobs(patient_name, job_cache_dir, device)
 
@@ -538,7 +550,7 @@ for epoch in range(nb_epochs):
                 lbl = torch.cat((lbl_1, lbl_2), dim=1)
 
                 contrastive_loss = contrastive_loss_fn(logits, lbl)
-                classification_loss = classification_loss_fn(ret_class, labels_class)
+                classification_loss = classification_loss_fn(ret_class.view(1, -1), labels_class)
                 loss = weight_contrastive * contrastive_loss + weight_classification * classification_loss
 
             val_contrastive += contrastive_loss.item()
@@ -547,7 +559,7 @@ for epoch in range(nb_epochs):
 
             outputs = torch.softmax(ret_class, dim=-1)
             predicted = torch.argmax(outputs).item()
-            true_label = torch.argmax(labels_class).item()
+            true_label = labels_class.item()
             val_correct += (predicted == true_label)
             val_total_count += 1
 
@@ -664,30 +676,30 @@ for patient in all_graphs:
         att_final = (att_full / 2).mean(axis=1)
         cell_embs = (gnn.cells_0 + gnn.cells_n) / 2
         gene_embs = (gnn.genes_0 + gnn.genes_n) / 2
-        emb_nhid = gnn.emb_104.cpu().numpy()
-        g_32  = gnn.g_32.cpu().numpy()
-        l_32  = gnn.l_32.cpu().numpy()
-        g_64  = gnn.g_64.cpu().numpy()
-        l_64  = gnn.l_64.cpu().numpy()
-        g_128 = gnn.g_128.cpu().numpy()
-        l_128 = gnn.l_128.cpu().numpy()
+        emb_nhid = _t2np(gnn.emb_104)
+        g_32  = _t2np(gnn.g_32)
+        l_32  = _t2np(gnn.l_32)
+        g_64  = _t2np(gnn.g_64)
+        l_64  = _t2np(gnn.l_64)
+        g_128 = _t2np(gnn.g_128)
+        l_128 = _t2np(gnn.l_128)
 
     patient_embedding = np.concatenate(
-        [emb_nhid, g_32, l_32, g_64, l_64, g_128, l_128, ret_class.cpu().numpy()], axis=0
+        [arr.flatten() for arr in [emb_nhid, g_32, l_32, g_64, l_64, g_128, l_128, _t2np(ret_class)]]
     )
 
     # Save edge attentions
-    positions = pd.DataFrame(gnn_input[0][3].T.cpu().numpy())
-    df = pd.DataFrame(att_final.cpu().numpy())
+    positions = pd.DataFrame(_t2np(gnn_input[0][3].T))
+    df = pd.DataFrame(_t2np(att_final))
     df2 = pd.concat([positions, df], axis=1)
     df2.to_csv(os.path.join(att_dir, f"{patient_name}_edge_att.csv"), sep=",", index=True)
 
     adata_subset = adata[adata.obs[patient_id].isin([patient_name])]
 
     # Save cell and gene embeddings
-    pd.DataFrame(cell_embs.cpu().numpy(), index=adata_subset.obs_names).to_csv(
+    pd.DataFrame(_t2np(cell_embs), index=adata_subset.obs_names).to_csv(
         os.path.join(cell_dir, f"{patient_name}_cell_embs.csv"))
-    pd.DataFrame(gene_embs.cpu().numpy(), index=adata_subset.var_names).to_csv(
+    pd.DataFrame(_t2np(gene_embs), index=adata_subset.var_names).to_csv(
         os.path.join(gene_dir, f"{patient_name}_gene_embs.csv"))
 
     # Save node attention scores
@@ -712,7 +724,7 @@ for patient in all_graphs:
     np.savetxt(os.path.join(patient_emb_dir_split, f"{patient_name}_emb_l64.csv"),  l_64,     delimiter=",")
     np.savetxt(os.path.join(patient_emb_dir_split, f"{patient_name}_emb_g128.csv"), g_128,    delimiter=",")
     np.savetxt(os.path.join(patient_emb_dir_split, f"{patient_name}_emb_l128.csv"), l_128,    delimiter=",")
-    np.savetxt(os.path.join(patient_emb_dir_split, f"{patient_name}_emb_class.csv"), ret_class.cpu().numpy(), delimiter=",")
+    np.savetxt(os.path.join(patient_emb_dir_split, f"{patient_name}_emb_class.csv"), _t2np(ret_class), delimiter=",")
 
     file_name = f'sample_{patient_name}_epoch_{args.epochs}_n_hid_{args.n_hid}_nheads_{args.n_heads}_lr_01_n_batch{args.n_batch}'
     np.savetxt(os.path.join(patient_emb_dir, f"{file_name}.csv"), patient_embedding, delimiter=",")

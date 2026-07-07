@@ -80,7 +80,7 @@ def plot_celltype_saliency_ranking(
     all_patients_cell_df = []
     for patient in patients:
         att_path = os.path.join(inter_dir, patient, "cells_atts.csv")
-        cell_scores = np.loadtxt(att_path, delimiter=",")
+        cell_scores = pd.read_csv(att_path, index_col=0).iloc[:, 0].values
 
         mask = cell_names["0"].str.startswith(patient + "__")
         patient_cell_barcodes = cell_names.loc[mask, "0"].values
@@ -259,6 +259,7 @@ def plot_celltype_gene_signatures(
                 os.path.join(att_dir, f"{patient}_edge_att.csv"), delimiter=","
             ).iloc[:, 1:]
             df2.columns = ["src", "tgt", "att"]
+            df2[["src", "tgt"]] = df2[["src", "tgt"]].astype(int)
 
             patient_mask = cell_names["0"].str.startswith(patient + "__")
             patient_cell_names = cell_names.loc[patient_mask, "0"].reset_index(drop=True)
@@ -462,7 +463,7 @@ def plot_celltype_differential_abundance(
     all_patients_cell_df = []
     for patient in patients:
         att_path = os.path.join(inter_dir, patient, "cells_atts.csv")
-        cell_scores = np.loadtxt(att_path, delimiter=",")
+        cell_scores = pd.read_csv(att_path, index_col=0).iloc[:, 0].values
 
         mask = cell_names["0"].str.startswith(patient + "__")
         patient_cell_barcodes = cell_names.loc[mask, "0"].values
@@ -683,7 +684,7 @@ def run_differential_gene_expression(
     for f in emb_files:
         patient_id = os.path.basename(f).replace("_gene_embs.csv", "")
         group = assign_group(patient_id)
-        df = pd.read_csv(f, header=None)
+        df = pd.read_csv(f, index_col=0)
         if len(df) != len(gene_names):
             raise ValueError(
                 f"{f}: {len(df)} rows but gene_names has {len(gene_names)} entries"
@@ -1162,7 +1163,7 @@ def plot_celltype_niche_heatmaps(
     patient_agg = {}
     for fpath in emb_files:
         patient_id = os.path.basename(fpath).replace("_cell_embs.csv", "")
-        cells = pd.read_csv(fpath, header=None)
+        cells = pd.read_csv(fpath, index_col=0)
         meta_p = meta_full[meta_full["patient"].astype(str).str.contains(patient_id)].reset_index(drop=True)
         if len(cells) != len(meta_p):
             print(f"Warning: row mismatch for {patient_id} ({len(cells)} vs {len(meta_p)}); skipping.")
@@ -1386,6 +1387,7 @@ def plot_grn_leiden_network(
             continue
         df = pd.read_csv(f, delimiter=",").iloc[:, 1:]
         df.columns = ["src", "tgt", "att"]
+        df[["src", "tgt"]] = df[["src", "tgt"]].astype(int)
         df = df[(df["src"] < n_genes) & (df["tgt"] < n_genes)]
         df = df[df["src"].isin(target_indices) & df["tgt"].isin(target_indices)]
         df["condition"] = condition
@@ -1509,3 +1511,180 @@ def _plot_grn_pair(G0, G1, label0, label1, layout, figsize, output_pdf):
     fig.savefig(output_pdf, dpi=180, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved: {output_pdf}")
+
+
+
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+#
+#                    PLOT CELL-TYPE x CELL-TYPE ATTENTION HEATMAPS
+#
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+
+import os
+import glob
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+
+def plot_celltype_attention_heatmaps(
+    att_dir: str,
+    cell_names_path: str,
+    meta: pd.DataFrame,          # columns: barcode, celltype, patient
+    gene_names,                  # list-like or path to reference count-matrix CSV
+    group_assignment,            # dict {patient_id: group} or (match_condition, [label, label])
+    output_pdf: str = "celltype_attention_heatmaps.pdf",
+    cmap: str = "viridis",
+    figsize=(12, 6),
+):
+    """
+    Build cell-type x cell-type attention matrices for two patient groups
+    from FloREN edge-attention scores, and plot them side by side on a
+    shared color scale.
+
+    For each patient: sum attention across all cell-cell edges within each
+    (celltype_src, celltype_tgt) pair. Average that per-patient sum across
+    patients within each group. Self-loops (same celltype) are dropped.
+
+    Parameters
+    ----------
+    att_dir : str
+        Folder with "<patient_id>_edge_att.csv" per patient (columns after
+        the first: src, tgt, att — global node indices; cells are indices
+        >= n_genes).
+    cell_names_path : str
+        Path to "All_AUC_Cell_names.csv" (column "0" = full barcodes,
+        formatted "<patient>__...").
+    meta : pd.DataFrame
+        Must have columns "barcode", "celltype", "patient" — however you
+        construct barcodes for your dataset (this varies across pipelines,
+        so it's left to the caller rather than assumed).
+    gene_names : list-like or str
+        Ordered gene identifiers matching edge-file node indexing, or a
+        path to the reference count-matrix CSV used at graph-construction
+        time. Only its length (n_genes) is used here.
+    group_assignment : dict or tuple
+        dict {patient_id: group_label}, or
+        (match_condition, [label_if_match, label_if_not]) where
+        match_condition is a substring or list of prefixes.
+    output_pdf : str
+        Output PDF path.
+
+    Returns
+    -------
+    dict {group_label: pd.DataFrame} — the two celltype x celltype matrices,
+    in the same cell-type order used for plotting.
+    """
+    # ---- n_genes ----
+    if isinstance(gene_names, str):
+        reference = pd.read_csv(gene_names)
+        reference = reference.set_index("Unnamed: 0").T.reset_index().rename(columns={"index": "gene"})
+        gene_names = reference[reference.columns[0]].values
+    n_genes = len(gene_names)
+
+    # ---- resolve group assignment ----
+    if isinstance(group_assignment, tuple):
+        match_condition, (label_match, label_nomatch) = group_assignment
+        if isinstance(match_condition, (list, tuple)):
+            prefixes = tuple(match_condition)
+            def assign_group(pid): return label_match if str(pid).startswith(prefixes) else label_nomatch
+        else:
+            def assign_group(pid): return label_match if match_condition in str(pid) else label_nomatch
+    elif isinstance(group_assignment, dict):
+        def assign_group(pid): return group_assignment.get(pid, "unknown")
+    else:
+        raise ValueError("group_assignment must be a dict or (match_condition, [label, label]) tuple")
+
+    cell_names = pd.read_csv(cell_names_path)
+    edge_files = sorted(glob.glob(os.path.join(att_dir, "*_edge_att.csv")))
+    if not edge_files:
+        raise FileNotFoundError(f"No '*_edge_att.csv' files found in {att_dir}")
+
+    # ---- per-patient celltype-celltype attention aggregation ----
+    all_celltype_edges = []
+    for f in edge_files:
+        patient = os.path.basename(f).replace("_edge_att.csv", "")
+        condition = assign_group(patient)
+        if condition == "unknown":
+            continue
+
+        df2 = pd.read_csv(f, delimiter=",").iloc[:, 1:]
+        df2.columns = ["src", "tgt", "att"]
+        df2[["src", "tgt"]] = df2[["src", "tgt"]].astype(int)
+
+        patient_mask = cell_names["0"].str.startswith(patient + "__")
+        patient_cell_names = cell_names.loc[patient_mask, "0"].reset_index(drop=True)
+        cell_df = pd.DataFrame({
+            "local_cell_index": np.arange(len(patient_cell_names)),
+            "barcode": patient_cell_names,
+            "patient": patient,
+        })
+        cell_df["node_index"] = cell_df["local_cell_index"] + n_genes
+        cell_df = cell_df.merge(
+            meta[["barcode", "celltype", "patient"]], on=["barcode", "patient"], how="left"
+        )
+        node_to_celltype = dict(zip(cell_df["node_index"], cell_df["celltype"]))
+
+        df_cells = df2[(df2["src"] >= n_genes) & (df2["tgt"] >= n_genes)].copy()
+        df_cells["celltype_src"] = df_cells["src"].map(node_to_celltype)
+        df_cells["celltype_tgt"] = df_cells["tgt"].map(node_to_celltype)
+        df_cells = df_cells.dropna(subset=["celltype_src", "celltype_tgt"])
+
+        agg = df_cells.groupby(["celltype_src", "celltype_tgt"], as_index=False)["att"].sum()
+        agg["patient"] = patient
+        agg["condition"] = condition
+        all_celltype_edges.append(agg)
+
+    all_celltype_edges = pd.concat(all_celltype_edges, ignore_index=True)
+    group_labels = [g for g in all_celltype_edges["condition"].unique()]
+    if len(group_labels) != 2:
+        raise ValueError(f"Expected exactly 2 groups, got {group_labels}")
+    g0, g1 = group_labels
+
+    celltype_edge_mean = all_celltype_edges.groupby(
+        ["condition", "celltype_src", "celltype_tgt"], as_index=False
+    )["att"].mean()
+
+    edges0 = celltype_edge_mean.query("condition == @g0").copy()
+    edges1 = celltype_edge_mean.query("condition == @g1").copy()
+    edges0 = edges0[edges0["celltype_src"] != edges0["celltype_tgt"]]  # drop self-loops
+    edges1 = edges1[edges1["celltype_src"] != edges1["celltype_tgt"]]
+
+    celltypes = sorted(set(all_celltype_edges["celltype_src"]) | set(all_celltype_edges["celltype_tgt"]))
+
+    def build_matrix(edges):
+        mat = pd.DataFrame(0.0, index=celltypes, columns=celltypes)
+        for _, row in edges.iterrows():
+            mat.loc[row["celltype_src"], row["celltype_tgt"]] = row["att"]
+        return mat
+
+    matrix0 = build_matrix(edges0)
+    matrix1 = build_matrix(edges1)
+
+    # ---- plot ----
+    vmin = 0
+    vmax = max(matrix0.values.max(), matrix1.values.max())
+
+    fig, axes = plt.subplots(1, 2, figsize=figsize)
+    sns.heatmap(
+        matrix0, ax=axes[0], cmap=cmap, vmin=vmin, vmax=vmax,
+        cbar=False, xticklabels=False, yticklabels=True,
+    )
+    axes[0].set_title(g0)
+    axes[0].tick_params(axis="y", labelsize=6)
+
+    sns.heatmap(
+        matrix1, ax=axes[1], cmap=cmap, vmin=vmin, vmax=vmax,
+        cbar=True, xticklabels=False, yticklabels=False,
+    )
+    axes[1].set_title(g1)
+
+    plt.tight_layout()
+    fig.savefig(output_pdf, bbox_inches="tight", dpi=200)
+    plt.close(fig)
+    print(f"Saved: {output_pdf}")
+
+    return {g0: matrix0, g1: matrix1}

@@ -3,3 +3,5 @@ env/
 test_output/
 data/Prior_Knowledge_PRECISEADS*.csv
 data/_pk_tmp/
+
+test_output/

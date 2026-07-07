@@ -275,7 +275,6 @@ else:
          "--patient_id",     "patient_id",
          "--metadata_group", "disease",
          "--epochs",         str(GNN_EPOCHS),
-         "--cuda",           str(cli.cuda),
          ],
     )
 
@@ -332,7 +331,7 @@ if ds:
         lambda: ds.plot_celltype_saliency_ranking(
             floren_results_path=results_path,
             h5ad_path=h5ad_path,
-            celltype_col="Celltype.Lev1.manuscript",
+            celltype_col="cell_type",
             sample_col="patient_id",
             agg="mean",
             top_n=10,
@@ -348,7 +347,7 @@ if ds:
             h5ad_path=h5ad_path,
             gene_names=gene_names,
             att_subdir="floren_attention_embeddings",
-            celltype_col="Celltype.Lev1.manuscript",
+            celltype_col="cell_type",
             sample_col="patient_id",
             top_n_genes=20,
         ),
@@ -362,7 +361,7 @@ if ds:
             floren_results_path=results_path,
             h5ad_path=h5ad_path,
             group_assignment=group_assignment,
-            celltype_col="Celltype.Lev1.manuscript",
+            celltype_col="cell_type",
             sample_col="patient_id",
             agg="mean",
             scale="both",
@@ -393,7 +392,7 @@ if ds:
             h5ad_path=h5ad_path,
             group_assignment=group_assignment,
             patient_col="patient_id",
-            celltype_col="Celltype.Lev1.manuscript",
+            celltype_col="cell_type",
             metrics=("cosine", "euclidean"),
         ),
     )
@@ -435,6 +434,34 @@ if ds:
         )
     except Exception as exc:
         _record("Step 4f — plot_grn_leiden_network", "SKIP", 0, 0,
+                note=f"Could not prepare inputs: {exc}")
+
+
+# 4-G ── Cell-type x cell-type attention heatmaps ─────────────────────────────
+if ds:
+    try:
+        import scanpy as _sc_g
+        _adata_g = _sc_g.read_h5ad(h5ad_path)
+        _meta_g = pd.DataFrame({
+            "celltype": _adata_g.obs["cell_type"].astype(str).values,
+            "patient":  _adata_g.obs["patient_id"].astype(str).values,
+        }, index=_adata_g.obs.index)
+        _meta_g["barcode"] = _meta_g["patient"] + "__" + _meta_g.index.astype(str)
+        del _adata_g
+
+        run_inprocess(
+            "Step 4g — plot_celltype_attention_heatmaps",
+            lambda: ds.plot_celltype_attention_heatmaps(
+                att_dir=att_dir_str,
+                cell_names_path=str(OUTPUT_DIR / "All_AUC_Cell_names.csv"),
+                meta=_meta_g,
+                gene_names=gene_names,
+                group_assignment=group_assignment,
+                output_pdf=str(OUTPUT_DIR / "plots" / "celltype_attention_heatmaps_test.pdf"),
+            ),
+        )
+    except Exception as exc:
+        _record("Step 4g — plot_celltype_attention_heatmaps", "SKIP", 0, 0,
                 note=f"Could not prepare inputs: {exc}")
 
 
