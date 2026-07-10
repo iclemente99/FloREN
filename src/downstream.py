@@ -1039,6 +1039,10 @@ def plot_attention_network_heatmap(
     )
 
     fig.patch.set_facecolor("#FFFFFF")
+    try:
+        os.remove(save_path)
+    except OSError:
+        pass
     fig.savefig(save_path, format="pdf", dpi=300, bbox_inches="tight",
                 facecolor="#FFFFFF", edgecolor="none")
     print(f"Saved: {save_path}")

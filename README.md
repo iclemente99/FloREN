@@ -140,7 +140,7 @@ Import them directly in a Python script or Jupyter notebook — no extra trainin
 | `plot_celltype_niche_heatmaps` | Computes within- and cross-group cell-type niche similarity heatmaps |
 | `plot_grn_leiden_network` | Builds gene co-attention networks and detects Leiden modules per group |
 | `plot_celltype_attention_heatmaps` | Plots cell-type × cell-type edge-attention matrices side by side for two groups |
-| `plot_attention_network_heatmap` | Plots cell-types and top genes attention network |
+| `plot_attention_network_heatmap` | Renders a combined cell-type / gene attention network with node saliency encoded as size and color |
 
 **Example — rank cell types by saliency:**
 
@@ -209,6 +209,67 @@ matrices = plot_celltype_attention_heatmaps(
 
 The function saves a two-panel PDF with a shared color scale — one heatmap per group — and
 returns the underlying DataFrames for further analysis.
+
+**Example — attention network heatmap (cell types + top genes):**
+
+```python
+import numpy as np
+import networkx as nx
+from downstream import plot_celltype_gene_signatures, plot_celltype_saliency_ranking
+from downstream import plot_attention_network_heatmap
+
+# 1. Get cell-type saliency scores
+saliency = plot_celltype_saliency_ranking(
+    floren_results_path = "./floren_output",
+    h5ad_path           = "./data/binvignat_example.h5ad",
+    celltype_col        = "cell_type",
+    sample_col          = "patient_id",
+)
+
+# 2. Get cell-type × gene attention matrix
+ct_gene_matrix = plot_celltype_gene_signatures(
+    floren_results_path = "./floren_output",
+    h5ad_path           = "./data/binvignat_example.h5ad",
+    gene_names          = gene_names,           # list(adata.var_names)
+    celltype_col        = "cell_type",
+    sample_col          = "patient_id",
+    top_n_genes         = 20,
+)
+
+# 3. Build bipartite graph: cell types + top 15 genes
+top_n = 15
+gene_means   = ct_gene_matrix.mean(axis=0)
+top_genes    = list(gene_means.sort_values(ascending=False).head(top_n).index)
+sal_max      = saliency.max() or 1.0
+gene_max     = float(gene_means[top_genes].max()) or 1.0
+
+G = nx.Graph()
+for ct in ct_gene_matrix.index:
+    G.add_node(ct, size=float(saliency.get(ct, 0.0)) / sal_max)
+for g in top_genes:
+    G.add_node(g, size=float(gene_means[g]) / gene_max)
+
+# Edges above the 75th-percentile attention threshold
+flat   = ct_gene_matrix[top_genes].values.flatten()
+thresh = float(np.percentile(flat[flat > 0], 75))
+for ct in ct_gene_matrix.index:
+    for g in top_genes:
+        w = float(ct_gene_matrix.at[ct, g])
+        if w >= thresh:
+            G.add_edge(ct, g, weight=w)
+
+# 4. Plot
+plot_attention_network_heatmap(
+    G          = G,
+    cell_nodes = list(ct_gene_matrix.index),
+    gene_nodes = top_genes,
+    layout     = "kamada",          # "kamada", "two_ring", "spring", or "spectral"
+    save_path  = "./floren_output/plots/attention_network_heatmap.pdf",
+)
+```
+
+Node color and size both encode saliency (blue = low → red = high); edge width encodes the
+mean attention weight. The PDF is self-contained and ready for publication.
 
 ## ✍️ Citation & Acknowledgements
 

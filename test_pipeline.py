@@ -339,8 +339,9 @@ if ds:
     )
 
 # 4-B ── Per-cell-type gene attention signatures ────────────────────────────────
+ct_gene_matrix = None
 if ds:
-    run_inprocess(
+    ct_gene_matrix = run_inprocess(
         "Step 4b — plot_celltype_gene_signatures",
         lambda: ds.plot_celltype_gene_signatures(
             floren_results_path=results_path,
@@ -462,6 +463,57 @@ if ds:
         )
     except Exception as exc:
         _record("Step 4g — plot_celltype_attention_heatmaps", "SKIP", 0, 0,
+                note=f"Could not prepare inputs: {exc}")
+
+
+# 4-H ── Attention network heatmap (bipartite cell-type + gene graph) ──────────
+if ds:
+    try:
+        import networkx as _nx
+        _top_n_net = 15
+
+        if ct_gene_matrix is not None and not ct_gene_matrix.empty:
+            _gene_means_net = ct_gene_matrix.mean(axis=0)
+            _top_genes_net  = list(_gene_means_net.sort_values(ascending=False).head(_top_n_net).index)
+
+            _G_net = _nx.Graph()
+
+            # Cell-type nodes: size = normalized saliency
+            _sal_max = saliency_series.max() if saliency_series is not None and saliency_series.max() > 0 else 1.0
+            for _ct in ct_gene_matrix.index:
+                _s = float(saliency_series.get(_ct, 0.0)) / _sal_max if saliency_series is not None else 0.5
+                _G_net.add_node(_ct, size=_s)
+
+            # Gene nodes: size = normalized mean attention
+            _gene_max = float(_gene_means_net[_top_genes_net].max()) or 1.0
+            for _g in _top_genes_net:
+                _G_net.add_node(_g, size=float(_gene_means_net[_g]) / _gene_max)
+
+            # Cell-gene edges above 75th-percentile threshold
+            _flat = ct_gene_matrix[_top_genes_net].values.flatten()
+            _pos  = _flat[_flat > 0]
+            _thresh = float(np.percentile(_pos, 75)) if len(_pos) > 0 else 0.0
+            for _ct in ct_gene_matrix.index:
+                for _g in _top_genes_net:
+                    _w = float(ct_gene_matrix.at[_ct, _g])
+                    if _w >= _thresh:
+                        _G_net.add_edge(_ct, _g, weight=_w)
+
+            run_inprocess(
+                "Step 4h — plot_attention_network_heatmap",
+                lambda: ds.plot_attention_network_heatmap(
+                    G=_G_net,
+                    cell_nodes=list(ct_gene_matrix.index),
+                    gene_nodes=_top_genes_net,
+                    layout="kamada",
+                    save_path=str(OUTPUT_DIR / "plots" / "attention_network_heatmap_test.pdf"),
+                ),
+            )
+        else:
+            _record("Step 4h — plot_attention_network_heatmap", "SKIP", 0, 0,
+                    note="ct_gene_matrix not available from step 4b")
+    except Exception as exc:
+        _record("Step 4h — plot_attention_network_heatmap", "SKIP", 0, 0,
                 note=f"Could not prepare inputs: {exc}")
 
 
