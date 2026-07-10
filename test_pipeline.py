@@ -14,6 +14,7 @@ Usage:
 """
 
 import os, sys, time, subprocess, threading, argparse, shutil, zipfile, traceback, importlib
+import importlib.util
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -184,6 +185,111 @@ def run_inprocess(label: str, fn):
         elapsed = time.perf_counter() - t0
     _record(label, status, elapsed, ram.delta_mb, note=note)
     return result
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# STEP 0 — Environment check
+# ──────────────────────────────────────────────────────────────────────────────
+def _check_env():
+    """
+    Verify that all packages required by the FloREN pipeline are importable and
+    carry a minimum version where a floor is enforced.  Prints a table of
+    PASS / FAIL / WARN lines and raises RuntimeError if any FAIL is found.
+    """
+    import importlib.metadata as _meta
+
+    # (package_name, import_name, min_version_or_None, critical)
+    REQUIRED = [
+        # Deep learning
+        ("torch",                  "torch",              "1.13",  True),
+        ("torch-geometric",        "torch_geometric",    "2.0",   True),
+        # Graph community detection
+        ("igraph",                 "igraph",             "0.10",  True),
+        ("leidenalg",              "leidenalg",          None,    True),
+        # Scientific computing
+        ("numpy",                  "numpy",              "1.20",  True),
+        ("scipy",                  "scipy",              "1.10",  True),
+        ("pandas",                 "pandas",             "1.5",   True),
+        ("scikit-learn",           "sklearn",            "1.0",   True),
+        ("statsmodels",            "statsmodels",        "0.13",  True),
+        ("numba",                  "numba",              None,    False),
+        ("dcor",                   "dcor",               None,    False),
+        # Single-cell / genomics
+        ("anndata",                "anndata",            "0.9",   True),
+        ("scanpy",                 "scanpy",             "1.9",   True),
+        ("umap-learn",             "umap",               None,    False),
+        # Graph & network
+        ("networkx",               "networkx",           "2.5",   True),
+        # Visualisation
+        ("matplotlib",             "matplotlib",         "3.5",   True),
+        ("seaborn",                "seaborn",            "0.12",  True),
+        # Parallel processing
+        ("multiprocessing-on-dill","multiprocess",       None,    False),
+        ("dill",                   "dill",               "0.3",   True),
+        ("joblib",                 "joblib",             None,    False),
+        # Utilities
+        ("tqdm",                   "tqdm",               None,    False),
+        ("psutil",                 "psutil",             None,    False),
+    ]
+
+    fails, warns = [], []
+    rows = []
+
+    def _parse(v):
+        """Tuple of ints from a version string, ignoring non-numeric suffixes."""
+        parts = []
+        for p in str(v).split(".")[:3]:
+            try:
+                parts.append(int(p.split("a")[0].split("b")[0].split("rc")[0]))
+            except ValueError:
+                parts.append(0)
+        return tuple(parts)
+
+    for pkg, imp, minver, critical in REQUIRED:
+        try:
+            mod = importlib.import_module(imp)
+            installed = getattr(mod, "__version__", None)
+            if installed is None:
+                try:
+                    installed = _meta.version(pkg)
+                except Exception:
+                    installed = "?"
+
+            ok = True
+            if minver and installed != "?":
+                ok = _parse(installed) >= _parse(minver)
+
+            status = "PASS" if ok else ("FAIL" if critical else "WARN")
+            note   = "" if ok else f"need >= {minver}, got {installed}"
+            if not ok:
+                (fails if critical else warns).append(f"{pkg}: {note}")
+        except ImportError as exc:
+            status = "FAIL" if critical else "WARN"
+            installed = "NOT FOUND"
+            note = str(exc)[:80]
+            (fails if critical else warns).append(f"{pkg}: {note}")
+
+        rows.append((status, pkg, installed, note))
+
+    # Print table
+    print(f"\n  {'Status':<6}  {'Package':<30}  {'Installed':<15}  Note")
+    print(f"  {'─'*6}  {'─'*30}  {'─'*15}  {'─'*40}")
+    for status, pkg, ver, note in rows:
+        icon = {"PASS": "✓", "FAIL": "✗", "WARN": "~"}.get(status, "?")
+        print(f"  {icon} {status:<5}  {pkg:<30}  {ver!s:<15}  {note}")
+
+    if warns:
+        print(f"\n  Warnings ({len(warns)}): {'; '.join(warns)}")
+    if fails:
+        raise RuntimeError(
+            f"Environment check failed — {len(fails)} critical package(s) missing or too old:\n"
+            + "\n".join(f"  • {f}" for f in fails)
+        )
+
+print(f"\n{'━'*66}")
+print("  STEP 0 — Environment check")
+print('━'*66, flush=True)
+run_inprocess("Step 0 — environment check", _check_env)
 
 
 # ──────────────────────────────────────────────────────────────────────────────

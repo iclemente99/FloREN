@@ -18,7 +18,7 @@ def cells_attention_ranking(
     floren_results_path: str,
     h5ad_path: str,
     output_pdf: str = None,
-    celltype_col: str = "Celltype.Lev1.manuscript",
+    celltype_col: str = "celltype",
     sample_col: str = "Sample",
     agg: str = "mean",          # "mean", "median", or a quantile float e.g. 0.75
     top_n: int = None,          # None = show all cell types
@@ -170,7 +170,7 @@ def gene_signatures(
     gene_names = None,                      # list/array of gene names, OR a path to a reference count-matrix CSV
     att_subdir: str = "att",
     cell_types: list = None,         # None = auto-derive from adata
-    celltype_col: str = "Celltype.Lev1.manuscript",
+    celltype_col: str = "celltype",
     sample_col: str = "Sample",
     top_n_genes: int = 50,
     output_pdf: str = None,
@@ -343,7 +343,7 @@ def gene_signatures(
     ax.set_xlabel(f"Top {top_n_genes} Genes (Ranked by Mean Attention)")
     ax.set_ylabel("Attention Score")
     ax.set_title("Celltype Attention Across Top Genes")
-    ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
+    ax.tick_params(axis="x", rotation=90)
     ax.legend(title="Celltype", bbox_to_anchor=(1.02, 1), loc="upper left", frameon=False)
     ax.grid(axis="y", alpha=0.3)
     plt.tight_layout()
@@ -378,7 +378,7 @@ def differential_abundance_analysis(
     floren_results_path: str,
     h5ad_path: str,
     group_assignment,
-    celltype_col: str = "Celltype.Lev1.manuscript",
+    celltype_col: str = "celltype",
     sample_col: str = "Sample",
     agg: str = "sum",              # "mean" or "sum" — how to summarize saliency per celltype per patient
     scale: str = "both",            # "linear", "log", or "both"
@@ -551,7 +551,7 @@ def differential_abundance_analysis(
                 ax.set_ylabel("Saliency Score")
 
             ax.set_xlabel("")
-            ax.set_xticklabels(ax.get_xticklabels(), rotation=90, fontsize=8)
+            ax.tick_params(axis="x", rotation=90, labelsize=8)
             ax.spines["top"].set_visible(False)
             ax.spines["right"].set_visible(False)
             ax.grid(axis="y", alpha=0.2)
@@ -1092,9 +1092,9 @@ def cell_niches_analysis(
     cell_embeddings_dir: str,
     h5ad_path: str,
     group_assignment,
-    patient_col: str = "ind_cov",
-    celltype_col: str = "cg_cov",
-    metrics=("cosine", "euclidean", "pearson"),
+    patient_col: str = "patient_id",
+    celltype_col: str = "celltype",
+    metrics=("euclidean",),
     cluster: bool = True,
     output_pdf: str = None,
     figsize=(15, 5),
@@ -1173,7 +1173,7 @@ def cell_niches_analysis(
         if len(cells) != len(meta_p):
             print(f"Warning: row mismatch for {patient_id} ({len(cells)} vs {len(meta_p)}); skipping.")
             continue
-        patient_agg[patient_id] = cells.groupby(meta_p["celltype"].values).mean().fillna(0)
+        patient_agg[patient_id] = cells.groupby(meta_p["celltype"].values).mean(numeric_only=True).fillna(0)
 
     print(f"Loaded {len(patient_agg)} patients.")
 
@@ -1307,10 +1307,10 @@ def plot_grn_leiden_network(
     gene_scores: dict,          # {group_label: pd.Series(index=gene, value=score)}
     group_assignment,           # dict {patient_id: group} or (match_condition, [label, label])
     leiden_resolution: float = 1.0,
-    min_module_size: int = 4,
+    min_module_size: int = 3,
     layout: str = "kamada_kawai",   # "kamada_kawai", "spring", or "fruchterman_reingold"
     figsize=(26, 13),
-    output_pdf: str = "GRN_leiden_comparison.pdf",
+    output_pdf: str = "Gene_programs_leiden_comparison.pdf",
 ):
     """
     Build gene-gene co-attention networks (restricted to `target_genes`) for
@@ -1542,7 +1542,7 @@ def cell_communication_profiling(
     gene_names,                  # list-like or path to reference count-matrix CSV
     group_assignment,            # dict {patient_id: group} or (match_condition, [label, label])
     output_pdf: str = "cell_communication_profiling.pdf",
-    cmap: str = "viridis",
+    cmap: str = "rocket_r",
     figsize=(12, 6),
 ):
     """
@@ -1710,7 +1710,19 @@ def cell_communication_profiling(
     panel_side = max(3.5, cell_px * n_ct + 1.8)
     fig_w      = panel_side * 2 + 1.5
 
-    fig, axes = plt.subplots(1, 2, figsize=(fig_w, panel_side))
+    #fig, axes = plt.subplots(1, 2, figsize=(fig_w, panel_side))
+    from matplotlib.gridspec import GridSpec
+    fig = plt.figure(figsize=(fig_w + 0.8, panel_side))
+    gs = GridSpec(
+        1, 3,
+        width_ratios=[1, 1, 0.045],
+        wspace=0.25
+    )
+    axes = [
+        fig.add_subplot(gs[0, 0]),
+        fig.add_subplot(gs[0, 1])
+    ]
+    cax = fig.add_subplot(gs[0, 2])
 
     _hm_kw = dict(
         cmap=cmap, vmin=vmin, vmax=vmax,
@@ -1746,7 +1758,8 @@ def cell_communication_profiling(
         cmap=cmap, norm=plt.Normalize(vmin=vmin, vmax=vmax)
     )
     sm.set_array([])
-    cbar = fig.colorbar(sm, ax=axes, shrink=0.55, pad=0.03, aspect=28, location="right")
+    #cbar = fig.colorbar(sm, ax=axes, shrink=0.55, pad=0.03, aspect=28, location="right")
+    cbar = fig.colorbar(sm, cax=cax)
     cbar.set_label("Mean attention score", fontsize=9, fontweight="bold", labelpad=8)
     cbar.ax.tick_params(labelsize=8)
     cbar.outline.set_linewidth(0.6)
@@ -1755,7 +1768,14 @@ def cell_communication_profiling(
                  fontsize=13, fontweight="bold", y=1.02)
     fig.patch.set_facecolor("white")
 
-    plt.tight_layout()
+    #plt.tight_layout()
+    fig.subplots_adjust(
+        left=0.08,
+        right=0.95,
+        bottom=0.18,
+        top=0.90,
+        wspace=0.30
+    )
     try:
         os.remove(output_pdf)
     except OSError:
