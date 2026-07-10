@@ -10,238 +10,257 @@
 ### 1. Clone FloREN Locally
 
 ```bash
-# Download locally the repository
 git clone https://github.com/iclemente99/FloREN
-
-# Move inside the repository
 cd FloREN
-
 ```
 
 ### 2. HGT Environment
 
-OPTION 1 - Create conda HGT environment
+**Option A — uv (recommended, works on Linux HPC & macOS & Windows)**
 
 ```bash
-
-conda env create -f env/hgt_env.yml
-conda activate hgt_env
-
-```
-
-OPTION 2 - Create uv HGT environment
-
-```bash
-# Install UV just once
+# Install uv once (skip if already installed)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Install the python environment
-uv venv hgt_env
-source hgt_env/bin/activate # For Windows run: hgt_env/Scripts/activate
+# Create a Python 3.8.10 virtual environment and install all dependencies
+uv python install 3.8.10
+uv venv hgt_env --python 3.8.10
+source hgt_env/bin/activate         # Windows: hgt_env\Scripts\activate
 uv pip install -r env/hgt_env.txt
-
 ```
 
-### 3. Unzip Prior Knowledge Reference for Usage
+**Option B — conda**
 
 ```bash
-# Unzip the file
-mkdir -p temp
-unzip ./data/Prior_Knowledge_PRECISEADS_compI_compII.zip -d temp # For Windows run: Expand-Archive -Path ".\data\Prior_Knowledge_PRECISEADS_compI_compII.zip" -DestinationPath ".\temp"
-unzip temp/*.zip -d temp/inner # For Windows run: Get-ChildItem "temp\*.zip" | ForEach-Object { Expand-Archive -Path $_.FullName -DestinationPath "temp\inner" -Force }
-mv temp/inner/*.csv ./data/Prior_Knowledge_PRECISEADS.csv # For Windows run: Get-ChildItem "temp\inner\*.csv" | Select-Object -First 1 | Copy-Item -Destination ".\data\Prior_Knowledge_PRECISEADS.csv"
-
+conda env create -f env/hgt_env.yml
+conda activate hgt_env
 ```
+
+> **Note for HPC / SLURM users**: if the cluster filesystem is on a different mount than the cache, add `export UV_LINK_MODE=copy` before running `uv pip install` to avoid hardlink warnings.
+
+> **Key dependencies** that must be present for all features:
+> `igraph`, `leidenalg` (GRN Leiden analysis) · `dill` (parallel graph processing) · `torch-geometric` (HGT model) · `scipy>=1.10` (sparse matrix support)
+
+### 3. Unzip Prior Knowledge Reference
+
+```bash
+# Linux / macOS
+mkdir -p temp
+unzip ./data/Prior_Knowledge_PRECISEADS_compI_compII.zip -d temp
+unzip temp/*.zip -d temp/inner
+mv temp/inner/*.csv ./data/Prior_Knowledge_PRECISEADS.csv
+
+# Windows (PowerShell)
+Expand-Archive -Path ".\data\Prior_Knowledge_PRECISEADS_compI_compII.zip" -DestinationPath ".\temp"
+Get-ChildItem "temp\*.zip" | ForEach-Object { Expand-Archive -Path $_.FullName -DestinationPath "temp\inner" -Force }
+Get-ChildItem "temp\inner\*.csv" | Select-Object -First 1 | Copy-Item -Destination ".\data\Prior_Knowledge_PRECISEADS.csv"
+```
+
+---
 
 ## Understanding the Input
 
-To run the FloREN pipeline, the input data must be organized in the `./data/` directory with specific formats for gene expression and cell connection data. Below are the requirements for each sample:
+To run the FloREN pipeline, the input data must be organized in the `./data/` directory.
 
-### 1. Adata object (`./data/`)
-- **VARS**: The adata object should only contain the genes that you want to work with (e.x: 2000 HVG). adata.var_names will be the gene names used.
-- **MATRIX**: The matrix used for the model is going to be the adata.layers['logcounts'] by default - You can change the adata.layers to use.
-- **OBS**: The adata.obs_names will be the cell names used. The obs used are going to be "patient_id" for sample aggregation and "group" for supervised classification task.
+### 1. AnnData object (`./data/`)
+- **VARS**: Only the genes you want to model (e.g. 2000 HVGs). `adata.var_names` → gene names.
+- **MATRIX**: Default layer is `adata.layers['logcounts']` — change `--count_layer` to use another.
+- **OBS**: `adata.obs_names` → cell barcodes. Required columns: `patient_id` (sample ID) and a group column (e.g. `disease`) for the supervised task.
 
 ### 2. Cell-Cell Connection Matrices (`./data/cell_connections/`)
-- **Location**: `./data/cell_connections/`
-- **Format**: One matrix file per sample, stored as a csv file.
-- **Dimensions**: Each matrix should have dimensions `[M, M]`, where `M` = number of cells (matching the number of cells in the corresponding gene expression matrix).
-- **Content**: The matrix represents cell-cell connections (e.g., adjacency matrix).
-- **Naming**: Files should match the sample identifiers used in `adata.obs.patient_id`
+- One CSV per sample, named after the sample ID in `adata.obs.patient_id`.
+- Square `[M × M]` adjacency matrix where M = number of cells in that sample.
+- **Optional**: if not provided, the model runs without cell-communication edges.
+
+---
 
 ## 🚀 Usage
 
-### Step 1: Build Heterogenous Graph
+### Step 1: Build Heterogeneous Graph
 
-This step will make sure the input is in the correct format, will run the autoencoders compression and the gene-regulatory network inference.
+Runs autoencoders for gene/cell compression and infers the gene-regulatory network.
 
 ```bash
-
-# Make sure you're in the activated environment
-
-# Run floren_input.py function
 python src/floren_input.py \
-  --adata_path './data/binvignat_example.h5ad' \
+  --adata_path    './data/binvignat_example.h5ad' \
   --cell_comm_path './data/cell_connections/' \
-  --output_path './floren_output/' \
-  --epochs 150 \
-  --grn_cutoff 0.9 \
-
+  --output_path   './floren_output/' \
+  --epochs        150 \
+  --grn_cutoff    0.9
 ```
-**If cell_comm_path not given, the model will keep running without cell communication information.**
 
-**Note**: All scripts must be run from the `src/` directory, or the working directory must be set to `src/` before running (e.g. `cd src && python floren_input.py ...`).
+> `--grn_cutoff` controls how strict the GRN is (0 = all edges, 1 = no edges). For small datasets use 0.5.
 
-### Step 2: Train Heterogenous Graph Transformer Self-Supervised Learning (HGTSSL) with Supervised finetunning
+### Step 2: Train HGT with Supervised Fine-tuning
 
-This step will train the model and save all the results: patient embeddings, cell embeddings gene embeddings, cell attention, gene attention and attention network.
+Trains the Heterogeneous Graph Transformer and saves patient/cell/gene embeddings and attention scores.
 
 ```bash
-
-# Run floren_training.py
 python src/floren_training.py \
-  --adata_path './data/binvignat_example.h5ad' \
-  --result_dir './floren_output/' \
-  --epochs 100 \
-  --patient_id "patient_id" \
+  --adata_path     './data/binvignat_example.h5ad' \
+  --result_dir     './floren_output/' \
+  --epochs         100 \
+  --patient_id     "patient_id" \
   --metadata_group "disease" \
-  --min_count 0  \
-
+  --min_count      0
 ```
 
-### Step 3: Visualize results
+### Step 3: Visualize Results
 
-Once the model is trained, this step will help with the initial visualization of the results.
+Generates UMAP embeddings and attention plots from the trained model.
 
 ```bash
-
-# Run floren_visualization.py
 python src/floren_visualization.py \
-  --adata_path './data/binvignat_example.h5ad' \
-  --result_dir './floren_output/' \
-  --patient_id "patient_id" \
-  --metadata_group "disease" \
-
+  --adata_path     './data/binvignat_example.h5ad' \
+  --result_dir     './floren_output/' \
+  --patient_id     "patient_id" \
+  --metadata_group "disease"
 ```
 
 ### Step 4: Downstream Analysis
 
-After training, FloREN provides a set of ready-to-use analysis functions in `src/downstream.py`.
-Import them directly in a Python script or Jupyter notebook — no extra training step required.
+After training, FloREN provides a set of analysis functions in `src/downstream.py`.
+Import them directly in a Python script or Jupyter notebook — no retraining required.
 
 **Available functions:**
 
 | Function | What it does |
 |---|---|
-| `plot_celltype_saliency_ranking` | Ranks cell types by mean attention score across all patients |
-| `plot_celltype_gene_signatures` | Builds per-cell-type gene attention profiles and plots the top N genes |
-| `plot_celltype_differential_abundance` | Compares cell-type saliency between two patient groups (Mann-Whitney + FDR) |
+| `cells_attention_ranking` | Ranks cell types by mean attention score across all patients |
+| `gene_signatures` | Builds per-cell-type gene attention profiles and plots the top N genes |
+| `differential_abundance_analysis` | Compares cell-type saliency between two patient groups (Mann-Whitney + FDR) |
 | `run_differential_gene_expression` | Compares gene embedding shift between groups; outputs a volcano plot |
-| `plot_celltype_niche_heatmaps` | Computes within- and cross-group cell-type niche similarity heatmaps |
+| `cell_niches_analysis` | Computes within- and cross-group cell-type niche similarity (cosine, Pearson, Euclidean) |
 | `plot_grn_leiden_network` | Builds gene co-attention networks and detects Leiden modules per group |
-| `plot_celltype_attention_heatmaps` | Plots cell-type × cell-type edge-attention matrices side by side for two groups |
-| `plot_attention_network_heatmap` | Renders a combined cell-type / gene attention network with node saliency encoded as size and color |
+| `cell_communication_profiling` | Cell–cell communication heatmaps: attention-weighted signaling between cell types |
+| `immune_network_plot` | Renders the full immune network — cell types + top genes — as a publication-ready graph |
 
-**Example — rank cell types by saliency:**
+---
+
+**Example — rank cell types by attention saliency:**
 
 ```python
 import sys
 sys.path.insert(0, "src")
-from downstream import plot_celltype_saliency_ranking
+from downstream import cells_attention_ranking
 
-saliency = plot_celltype_saliency_ranking(
-    floren_results_path = "./floren_output",   # folder passed as --result_dir during training
+saliency = cells_attention_ranking(
+    floren_results_path = "./floren_output",
     h5ad_path           = "./data/binvignat_example.h5ad",
-    celltype_col        = "Celltype.Lev1.manuscript",  # adata.obs column with cell-type labels
-    sample_col          = "patient_id",                # adata.obs column with patient IDs
-    agg                 = "mean",   # summarise saliency per cell type: "mean", "median", or a quantile float
-    top_n               = 15,       # plot only the 15 highest-saliency cell types; None = show all
+    celltype_col        = "cell_type",   # adata.obs column with cell-type labels
+    sample_col          = "patient_id",
+    agg                 = "mean",        # "mean", "median", or a quantile float
+    top_n               = 15,
 )
-# saliency is a pd.Series sorted by mean score — inspect it directly:
+# saliency is a pd.Series sorted by mean score
 print(saliency.head(10))
 ```
 
-This saves a lollipop PDF to `./floren_output/plots/Celltype_Saliency_Ranking.pdf` and returns
-a `pd.Series` you can filter or export for further analysis.
+Saves `./floren_output/plots/cells_attention_ranking.pdf`.
+
+---
 
 **Example — compare cell-type saliency between two patient groups:**
 
 ```python
-from downstream import plot_celltype_differential_abundance
+from downstream import differential_abundance_analysis
 
-results_df, all_cells = plot_celltype_differential_abundance(
+results_df, all_cells = differential_abundance_analysis(
     floren_results_path = "./floren_output",
     h5ad_path           = "./data/binvignat_example.h5ad",
     group_assignment    = {"patient_A": "Disease", "patient_B": "Control", "patient_C": "Disease"},
-    # alternatively, use a substring rule: ("MS", ["MS", "HC"])
-    celltype_col        = "Celltype.Lev1.manuscript",
+    # alternatively, use a substring rule: ("RA", ["RA", "Control"])
+    celltype_col        = "cell_type",
     sample_col          = "patient_id",
-    agg                 = "mean",   # "mean" is safer than "sum" when patient cell counts differ
-    scale               = "both",   # save linear and log-scale panels in one PDF
+    agg                 = "mean",
+    scale               = "both",
 )
 # results_df contains Mann-Whitney U statistics and BH-corrected p-values per cell type
 significant = results_df[results_df["p_adj"] < 0.05].sort_values("p_adj")
 print(significant[["celltype", "p_adj", "Disease_median", "Control_median"]])
 ```
 
-**Example — cell-type × cell-type attention heatmaps:**
+Saves `./floren_output/plots/differential_abundance_analysis.pdf`.
+
+---
+
+**Example — cell–cell communication profiling:**
 
 ```python
 import scanpy as sc
-from downstream import plot_celltype_attention_heatmaps
+from downstream import cell_communication_profiling
 
 adata = sc.read_h5ad("./data/binvignat_example.h5ad")
-meta = adata.obs[["Celltype.Lev1.manuscript", "patient_id"]].copy()
+meta = adata.obs[["cell_type", "patient_id"]].copy()
 meta.columns = ["celltype", "patient"]
 meta["barcode"] = meta["patient"] + "__" + adata.obs_names
 
-matrices = plot_celltype_attention_heatmaps(
+matrices = cell_communication_profiling(
     att_dir          = "./floren_output/floren_attention_embeddings",
     cell_names_path  = "./floren_output/All_AUC_Cell_names.csv",
     meta             = meta.reset_index(drop=True),
     gene_names       = list(adata.var_names),
     group_assignment = {"patient_A": "Disease", "patient_B": "Control"},
-    # alternatively: ("MS", ["MS", "HC"])
-    output_pdf       = "./floren_output/plots/celltype_attention_heatmaps.pdf",
+    # alternatively: ("RA", ["RA", "Control"])
+    output_pdf       = "./floren_output/plots/cell_communication_profiling.pdf",
 )
-# matrices is a dict {group_label: pd.DataFrame (celltype x celltype)}
+# matrices is a dict {group_label: pd.DataFrame (celltype × celltype)}
 ```
 
-The function saves a two-panel PDF with a shared color scale — one heatmap per group — and
-returns the underlying DataFrames for further analysis.
+Saves a two-panel journal-quality PDF with hierarchically clustered cell types, shared colorbar, and patient counts — one heatmap per group.
 
-**Example — attention network heatmap (cell types + top genes):**
+---
+
+**Example — cell-type niche similarity (cosine + Pearson + Euclidean):**
+
+```python
+from downstream import cell_niches_analysis
+
+result = cell_niches_analysis(
+    cell_embeddings_dir = "./floren_output/floren_cell_embeddings",
+    h5ad_path           = "./data/binvignat_example.h5ad",
+    group_assignment    = {"patient_A": "Disease", "patient_B": "Control"},
+    patient_col         = "patient_id",
+    celltype_col        = "cell_type",
+    # metrics default = ("cosine", "euclidean", "pearson") — one PDF page each
+)
+```
+
+Saves `./floren_output/plots/cell_niches_analysis.pdf` (three pages: cosine, Euclidean, Pearson).
+
+---
+
+**Example — immune network plot (cell types + top genes):**
 
 ```python
 import numpy as np
 import networkx as nx
-from downstream import plot_celltype_gene_signatures, plot_celltype_saliency_ranking
-from downstream import plot_attention_network_heatmap
+from downstream import cells_attention_ranking, gene_signatures, immune_network_plot
 
-# 1. Get cell-type saliency scores
-saliency = plot_celltype_saliency_ranking(
+# 1. Cell-type saliency scores
+saliency = cells_attention_ranking(
     floren_results_path = "./floren_output",
     h5ad_path           = "./data/binvignat_example.h5ad",
     celltype_col        = "cell_type",
     sample_col          = "patient_id",
 )
 
-# 2. Get cell-type × gene attention matrix
-ct_gene_matrix = plot_celltype_gene_signatures(
+# 2. Cell-type × gene attention matrix
+ct_gene_matrix = gene_signatures(
     floren_results_path = "./floren_output",
     h5ad_path           = "./data/binvignat_example.h5ad",
-    gene_names          = gene_names,           # list(adata.var_names)
+    gene_names          = list(adata.var_names),
     celltype_col        = "cell_type",
     sample_col          = "patient_id",
     top_n_genes         = 20,
 )
 
 # 3. Build bipartite graph: cell types + top 15 genes
-top_n = 15
-gene_means   = ct_gene_matrix.mean(axis=0)
-top_genes    = list(gene_means.sort_values(ascending=False).head(top_n).index)
-sal_max      = saliency.max() or 1.0
-gene_max     = float(gene_means[top_genes].max()) or 1.0
+top_n      = 15
+gene_means = ct_gene_matrix.mean(axis=0)
+top_genes  = list(gene_means.sort_values(ascending=False).head(top_n).index)
+sal_max    = saliency.max() or 1.0
+gene_max   = float(gene_means[top_genes].max()) or 1.0
 
 G = nx.Graph()
 for ct in ct_gene_matrix.index:
@@ -249,7 +268,6 @@ for ct in ct_gene_matrix.index:
 for g in top_genes:
     G.add_node(g, size=float(gene_means[g]) / gene_max)
 
-# Edges above the 75th-percentile attention threshold
 flat   = ct_gene_matrix[top_genes].values.flatten()
 thresh = float(np.percentile(flat[flat > 0], 75))
 for ct in ct_gene_matrix.index:
@@ -259,17 +277,18 @@ for ct in ct_gene_matrix.index:
             G.add_edge(ct, g, weight=w)
 
 # 4. Plot
-plot_attention_network_heatmap(
+immune_network_plot(
     G          = G,
     cell_nodes = list(ct_gene_matrix.index),
     gene_nodes = top_genes,
-    layout     = "kamada",          # "kamada", "two_ring", "spring", or "spectral"
-    save_path  = "./floren_output/plots/attention_network_heatmap.pdf",
+    layout     = "kamada",   # "kamada", "two_ring", "spring", or "spectral"
+    save_path  = "./floren_output/plots/immune_network_plot.pdf",
 )
 ```
 
-Node color and size both encode saliency (blue = low → red = high); edge width encodes the
-mean attention weight. The PDF is self-contained and ready for publication.
+Node color and size both encode saliency (blue = low → red = high); edge width encodes attention weight. The PDF is self-contained and publication-ready.
+
+---
 
 ## ✍️ Citation & Acknowledgements
 

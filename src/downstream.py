@@ -14,7 +14,7 @@ import scanpy as sc
 import matplotlib.pyplot as plt
 
 
-def plot_celltype_saliency_ranking(
+def cells_attention_ranking(
     floren_results_path: str,
     h5ad_path: str,
     output_pdf: str = None,
@@ -39,7 +39,7 @@ def plot_celltype_saliency_ranking(
         Path to the AnnData (.h5ad) file with cell-type / sample metadata.
     output_pdf : str, optional
         Where to save the plot. Defaults to
-        "<floren_results_path>/plots/Celltype_Saliency_Ranking.pdf"
+        "<floren_results_path>/plots/cells_attention_ranking.pdf"
     celltype_col, sample_col : str
         Column names in adata.obs.
     agg : str or float
@@ -58,7 +58,7 @@ def plot_celltype_saliency_ranking(
     if output_pdf is None:
         plots_dir = os.path.join(floren_results_path, "plots")
         os.makedirs(plots_dir, exist_ok=True)
-        output_pdf = os.path.join(plots_dir, "Celltype_Saliency_Ranking.pdf")
+        output_pdf = os.path.join(plots_dir, "cells_attention_ranking.pdf")
 
     # ---- load required inputs ----
     patients = sorted(
@@ -164,7 +164,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 
-def plot_celltype_gene_signatures(
+def gene_signatures(
     floren_results_path: str,
     h5ad_path: str,
     gene_names = None,                      # list/array of gene names, OR a path to a reference count-matrix CSV
@@ -203,7 +203,7 @@ def plot_celltype_gene_signatures(
     top_n_genes : int
         Number of top genes (by mean attention across cell types) to plot.
     output_pdf : str, optional
-        Defaults to "<floren_results_path>/plots/Saliency_gene_signatures_comparison_{top_n_genes}.pdf"
+        Defaults to "<floren_results_path>/plots/gene_signatures_{top_n_genes}.pdf"
 
     Returns
     -------
@@ -217,7 +217,7 @@ def plot_celltype_gene_signatures(
         plots_dir = os.path.join(floren_results_path, "plots")
         os.makedirs(plots_dir, exist_ok=True)
         output_pdf = os.path.join(
-            plots_dir, f"Saliency_gene_signatures_comparison_{top_n_genes}.pdf"
+            plots_dir, f"gene_signatures_{top_n_genes}.pdf"
         )
 
     # ---- patients (derived from available edge-attention files) ----
@@ -374,7 +374,7 @@ from scipy.stats import mannwhitneyu
 from statsmodels.stats.multitest import multipletests
 
 
-def plot_celltype_differential_abundance(
+def differential_abundance_analysis(
     floren_results_path: str,
     h5ad_path: str,
     group_assignment,
@@ -411,7 +411,7 @@ def plot_celltype_differential_abundance(
     scale : str
         "linear", "log", or "both" (both saved as separate pages in one PDF).
     output_pdf : str, optional
-        Defaults to "<floren_results_path>/plots/Celltype_Saliency_Boxplots_diffabundance.pdf"
+        Defaults to "<floren_results_path>/plots/differential_abundance_analysis.pdf"
 
     Returns
     -------
@@ -427,7 +427,7 @@ def plot_celltype_differential_abundance(
     if output_pdf is None:
         plots_dir = os.path.join(floren_results_path, "plots")
         os.makedirs(plots_dir, exist_ok=True)
-        output_pdf = os.path.join(plots_dir, "Celltype_Saliency_Boxplots_diffabundance.pdf")
+        output_pdf = os.path.join(plots_dir, "differential_abundance_analysis.pdf")
 
     if scale not in ("linear", "log", "both"):
         raise ValueError("scale must be 'linear', 'log', or 'both'")
@@ -862,7 +862,7 @@ def _build_two_ring_layout(G, cell_nodes, gene_nodes):
     return pos
 
 
-def plot_attention_network_heatmap(
+def immune_network_plot(
     G,
     cell_nodes,
     gene_nodes=None,
@@ -870,7 +870,7 @@ def plot_attention_network_heatmap(
     figsize=(16, 16),
     label_fontsize_cell: float = 7.5,
     label_fontsize_gene: float = 6.0,
-    save_path: str = "attention_network_heatmap.pdf",
+    save_path: str = "immune_network_plot.pdf",
 ):
     """
     Plot a cell-type/gene attention network with a shared blue->red colormap
@@ -1088,7 +1088,7 @@ def _hierarchical_order(similarity_matrix, method="average"):
     return leaves_list(link)
 
 
-def plot_celltype_niche_heatmaps(
+def cell_niches_analysis(
     cell_embeddings_dir: str,
     h5ad_path: str,
     group_assignment,
@@ -1128,7 +1128,7 @@ def plot_celltype_niche_heatmaps(
         averaged (group A + group B) profile, applied consistently to all
         three panels so rows/columns are comparable across panels.
     output_pdf : str, optional
-        Defaults to "<cell_embeddings_dir>/../celltype_niche_heatmaps.pdf"
+        Defaults to "<cell_embeddings_dir>/../plots/cell_niches_analysis.pdf"
 
     Returns
     -------
@@ -1138,8 +1138,9 @@ def plot_celltype_niche_heatmaps(
     """
     if output_pdf is None:
         output_pdf = os.path.join(
-            os.path.dirname(cell_embeddings_dir.rstrip("/\\")), "celltype_niche_heatmaps.pdf"
+            os.path.dirname(cell_embeddings_dir.rstrip("/\\")), "plots", "cell_niches_analysis.pdf"
         )
+    os.makedirs(os.path.dirname(output_pdf), exist_ok=True)
 
     # ---- resolve group assignment ----
     if isinstance(group_assignment, tuple):
@@ -1534,13 +1535,13 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 
-def plot_celltype_attention_heatmaps(
+def cell_communication_profiling(
     att_dir: str,
     cell_names_path: str,
     meta: pd.DataFrame,          # columns: barcode, celltype, patient
     gene_names,                  # list-like or path to reference count-matrix CSV
     group_assignment,            # dict {patient_id: group} or (match_condition, [label, label])
-    output_pdf: str = "celltype_attention_heatmaps.pdf",
+    output_pdf: str = "cell_communication_profiling.pdf",
     cmap: str = "viridis",
     figsize=(12, 6),
 ):
@@ -1668,26 +1669,98 @@ def plot_celltype_attention_heatmaps(
     matrix0 = build_matrix(edges0)
     matrix1 = build_matrix(edges1)
 
-    # ---- plot ----
-    vmin = 0
-    vmax = max(matrix0.values.max(), matrix1.values.max())
+    # ── hierarchical ordering on the pooled mean ──────────────────────────────
+    from scipy.cluster.hierarchy import linkage, leaves_list
+    from scipy.spatial.distance import pdist
 
-    fig, axes = plt.subplots(1, 2, figsize=figsize)
-    sns.heatmap(
-        matrix0, ax=axes[0], cmap=cmap, vmin=vmin, vmax=vmax,
-        cbar=False, xticklabels=False, yticklabels=True,
-    )
-    axes[0].set_title(g0)
-    axes[0].tick_params(axis="y", labelsize=6)
+    combined_vals = (matrix0.values + matrix1.values) / 2.0
+    if combined_vals.max() > 0 and len(celltypes) > 1:
+        try:
+            link  = linkage(pdist(combined_vals, metric="euclidean"), method="average")
+            order = leaves_list(link)
+        except Exception:
+            order = list(range(len(celltypes)))
+    else:
+        order = list(range(len(celltypes)))
 
-    sns.heatmap(
-        matrix1, ax=axes[1], cmap=cmap, vmin=vmin, vmax=vmax,
-        cbar=True, xticklabels=False, yticklabels=False,
+    ct_ord  = [celltypes[i] for i in order]
+    matrix0 = matrix0.loc[ct_ord, ct_ord]
+    matrix1 = matrix1.loc[ct_ord, ct_ord]
+
+    # patient counts per group
+    counts = all_celltype_edges.groupby("condition")["patient"].nunique()
+    n0 = int(counts.get(g0, 0))
+    n1 = int(counts.get(g1, 0))
+
+    # ── journal-quality plot ──────────────────────────────────────────────────
+    plt.rcParams.update({
+        "font.family":     "sans-serif",
+        "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
+        "pdf.fonttype": 42, "ps.fonttype": 42,
+        "axes.linewidth": 0.8, "font.size": 9,
+    })
+
+    vmin = 0.0
+    vmax = float(max(matrix0.values.max(), matrix1.values.max()))
+    if vmax == 0:
+        vmax = 1.0
+
+    n_ct = len(ct_ord)
+    cell_px    = max(0.3, min(0.65, 7.0 / max(n_ct, 1)))
+    panel_side = max(3.5, cell_px * n_ct + 1.8)
+    fig_w      = panel_side * 2 + 1.5
+
+    fig, axes = plt.subplots(1, 2, figsize=(fig_w, panel_side))
+
+    _hm_kw = dict(
+        cmap=cmap, vmin=vmin, vmax=vmax,
+        square=True, cbar=False,
+        linewidths=0.25, linecolor="white",
     )
-    axes[1].set_title(g1)
+
+    # Left panel (g0) — show both x and y labels
+    sns.heatmap(matrix0, ax=axes[0],
+                xticklabels=ct_ord, yticklabels=ct_ord, **_hm_kw)
+    axes[0].set_title(f"{g0}  (n = {n0} patients)",
+                      fontsize=11, fontweight="bold", pad=10)
+    axes[0].set_xlabel("Target cell type", fontsize=9, fontweight="bold", labelpad=6)
+    axes[0].set_ylabel("Source cell type", fontsize=9, fontweight="bold", labelpad=6)
+    axes[0].tick_params(axis="x", labelsize=6, rotation=90)
+    axes[0].tick_params(axis="y", labelsize=6, rotation=0)
+    for spine in axes[0].spines.values():
+        spine.set_visible(True); spine.set_linewidth(0.6); spine.set_color("#444444")
+
+    # Right panel (g1) — show x labels; y labels omitted (shared axis)
+    sns.heatmap(matrix1, ax=axes[1],
+                xticklabels=ct_ord, yticklabels=False, **_hm_kw)
+    axes[1].set_title(f"{g1}  (n = {n1} patients)",
+                      fontsize=11, fontweight="bold", pad=10)
+    axes[1].set_xlabel("Target cell type", fontsize=9, fontweight="bold", labelpad=6)
+    axes[1].set_ylabel("")
+    axes[1].tick_params(axis="x", labelsize=6, rotation=90)
+    for spine in axes[1].spines.values():
+        spine.set_visible(True); spine.set_linewidth(0.6); spine.set_color("#444444")
+
+    # Shared colorbar
+    sm = plt.cm.ScalarMappable(
+        cmap=cmap, norm=plt.Normalize(vmin=vmin, vmax=vmax)
+    )
+    sm.set_array([])
+    cbar = fig.colorbar(sm, ax=axes, shrink=0.55, pad=0.03, aspect=28, location="right")
+    cbar.set_label("Mean attention score", fontsize=9, fontweight="bold", labelpad=8)
+    cbar.ax.tick_params(labelsize=8)
+    cbar.outline.set_linewidth(0.6)
+
+    fig.suptitle("Cell–Cell Communication Profiling",
+                 fontsize=13, fontweight="bold", y=1.02)
+    fig.patch.set_facecolor("white")
 
     plt.tight_layout()
-    fig.savefig(output_pdf, bbox_inches="tight", dpi=200)
+    try:
+        os.remove(output_pdf)
+    except OSError:
+        pass
+    fig.savefig(output_pdf, bbox_inches="tight", dpi=300, facecolor="white")
     plt.close(fig)
     print(f"Saved: {output_pdf}")
 

@@ -231,7 +231,7 @@ else:
          "--cell_comm_path", str(DATA_DIR / "cell_connections"),
          "--output_path",    str(OUTPUT_DIR),
          "--epochs",         str(AE_EPOCHS),
-         "--grn_cutoff",     "0.9",
+         "--grn_cutoff",     "0.5",
          "--cuda",           str(cli.cuda),
          ],
     )
@@ -327,8 +327,8 @@ except Exception as exc:
 saliency_series = None
 if ds:
     saliency_series = run_inprocess(
-        "Step 4a — plot_celltype_saliency_ranking",
-        lambda: ds.plot_celltype_saliency_ranking(
+        "Step 4a — cells_attention_ranking",
+        lambda: ds.cells_attention_ranking(
             floren_results_path=results_path,
             h5ad_path=h5ad_path,
             celltype_col="cell_type",
@@ -342,8 +342,8 @@ if ds:
 ct_gene_matrix = None
 if ds:
     ct_gene_matrix = run_inprocess(
-        "Step 4b — plot_celltype_gene_signatures",
-        lambda: ds.plot_celltype_gene_signatures(
+        "Step 4b — gene_signatures",
+        lambda: ds.gene_signatures(
             floren_results_path=results_path,
             h5ad_path=h5ad_path,
             gene_names=gene_names,
@@ -357,8 +357,8 @@ if ds:
 # 4-C ── Differential cell-type abundance (Mann-Whitney) ───────────────────────
 if ds:
     run_inprocess(
-        "Step 4c — plot_celltype_differential_abundance",
-        lambda: ds.plot_celltype_differential_abundance(
+        "Step 4c — differential_abundance_analysis",
+        lambda: ds.differential_abundance_analysis(
             floren_results_path=results_path,
             h5ad_path=h5ad_path,
             group_assignment=group_assignment,
@@ -384,25 +384,26 @@ if ds:
         ),
     )
 
-# 4-E ── Cell-type niche similarity heatmaps ───────────────────────────────────
+# 4-E ── Cell-type niche similarity heatmaps (cosine + pearson + euclidean) ────
 if ds:
     run_inprocess(
-        "Step 4e — plot_celltype_niche_heatmaps",
-        lambda: ds.plot_celltype_niche_heatmaps(
+        "Step 4e — cell_niches_analysis",
+        lambda: ds.cell_niches_analysis(
             cell_embeddings_dir=cell_emb_dir,
             h5ad_path=h5ad_path,
             group_assignment=group_assignment,
             patient_col="patient_id",
             celltype_col="cell_type",
-            metrics=("cosine", "euclidean"),
+            output_pdf=str(OUTPUT_DIR / "plots" / "cell_niches_analysis.pdf"),
+            # default metrics = ("cosine", "euclidean", "pearson") — all three pages
         ),
     )
 
 # 4-F ── GRN Leiden community network ──────────────────────────────────────────
-# target_genes: top 40 genes by mean attention from DGE result, or first 40 genes
+# Note: with the small example dataset (6 patients, 50 AE epochs, grn_cutoff=0.5)
+# gene-gene edges are sparse; min_module_size=2 keeps at least paired communities.
 if ds:
     try:
-        # run_differential_gene_expression returns (gene_results_df, group_means_dict)
         gene_results_df = None
         if dge_result is not None:
             gene_results_df = dge_result[0] if isinstance(dge_result, tuple) else dge_result
@@ -417,7 +418,6 @@ if ds:
         else:
             target_genes = gene_names[:40]
 
-        # gene_scores: uniform score of 1.0 for every target gene per group
         gene_scores = {g: pd.Series(np.ones(len(target_genes)), index=target_genes)
                        for g in groups}
 
@@ -430,6 +430,7 @@ if ds:
                 gene_scores=gene_scores,
                 group_assignment=group_assignment,
                 leiden_resolution=0.5,
+                min_module_size=2,
                 output_pdf=str(OUTPUT_DIR / "plots" / "GRN_leiden_test.pdf"),
             ),
         )
@@ -438,7 +439,7 @@ if ds:
                 note=f"Could not prepare inputs: {exc}")
 
 
-# 4-G ── Cell-type x cell-type attention heatmaps ─────────────────────────────
+# 4-G ── Cell–Cell communication profiling ────────────────────────────────────
 if ds:
     try:
         import scanpy as _sc_g
@@ -451,22 +452,22 @@ if ds:
         del _adata_g
 
         run_inprocess(
-            "Step 4g — plot_celltype_attention_heatmaps",
-            lambda: ds.plot_celltype_attention_heatmaps(
+            "Step 4g — cell_communication_profiling",
+            lambda: ds.cell_communication_profiling(
                 att_dir=att_dir_str,
                 cell_names_path=str(OUTPUT_DIR / "All_AUC_Cell_names.csv"),
                 meta=_meta_g,
                 gene_names=gene_names,
                 group_assignment=group_assignment,
-                output_pdf=str(OUTPUT_DIR / "plots" / "celltype_attention_heatmaps_test.pdf"),
+                output_pdf=str(OUTPUT_DIR / "plots" / "cell_communication_profiling.pdf"),
             ),
         )
     except Exception as exc:
-        _record("Step 4g — plot_celltype_attention_heatmaps", "SKIP", 0, 0,
+        _record("Step 4g — cell_communication_profiling", "SKIP", 0, 0,
                 note=f"Could not prepare inputs: {exc}")
 
 
-# 4-H ── Attention network heatmap (bipartite cell-type + gene graph) ──────────
+# 4-H ── Immune network plot (bipartite cell-type + gene graph) ────────────────
 if ds:
     try:
         import networkx as _nx
@@ -500,20 +501,20 @@ if ds:
                         _G_net.add_edge(_ct, _g, weight=_w)
 
             run_inprocess(
-                "Step 4h — plot_attention_network_heatmap",
-                lambda: ds.plot_attention_network_heatmap(
+                "Step 4h — immune_network_plot",
+                lambda: ds.immune_network_plot(
                     G=_G_net,
                     cell_nodes=list(ct_gene_matrix.index),
                     gene_nodes=_top_genes_net,
                     layout="kamada",
-                    save_path=str(OUTPUT_DIR / "plots" / "attention_network_heatmap_test.pdf"),
+                    save_path=str(OUTPUT_DIR / "plots" / "immune_network_plot.pdf"),
                 ),
             )
         else:
-            _record("Step 4h — plot_attention_network_heatmap", "SKIP", 0, 0,
+            _record("Step 4h — immune_network_plot", "SKIP", 0, 0,
                     note="ct_gene_matrix not available from step 4b")
     except Exception as exc:
-        _record("Step 4h — plot_attention_network_heatmap", "SKIP", 0, 0,
+        _record("Step 4h — immune_network_plot", "SKIP", 0, 0,
                 note=f"Could not prepare inputs: {exc}")
 
 
