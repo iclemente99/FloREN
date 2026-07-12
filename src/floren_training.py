@@ -4,6 +4,7 @@
 #
 ################################################################
 
+import gc
 import pandas as pd
 import numpy as np
 import os
@@ -302,6 +303,9 @@ debuginfoStr('Graph split finished')
 #
 ################################################################
 
+# FIX 2: gradient checkpointing trades recomputation for activation memory.
+# For large graphs (thousands of nodes, millions of edges) this can cut backward-pass
+# RAM by 50-60% at the cost of ~30% extra forward compute per layer.
 gnn = GNN(
     conv_name=args.layer_type,
     in_dim=h_n,
@@ -312,7 +316,8 @@ gnn = GNN(
     num_types=2,
     num_relations=7,
     use_RTE=False,
-    n_labels=num_groups
+    n_labels=num_groups,
+    use_grad_checkpoint=True,
 ).to(device)
 
 if args.optimizer == 'adamw':
@@ -442,6 +447,18 @@ print("Caching subgraph jobs to disk...")
 save_jobs_to_disk(patient_graphs, args.gene_rate, args.cell_rate, job_cache_dir)
 debuginfoStr('Pre-generated jobs for all patients')
 
+# FIX 1+4: free the heavy Graph objects and adata expression layers now that all
+# subgraph jobs are safely cached to disk.  save_jobs_to_disk() was the last
+# consumer of both; training only needs patient names and the .pt files.
+for _p in patient_graphs:
+    _p.pop('graph', None)
+    _p.pop('cells_idx', None)
+del patient_graphs
+for _lyr in list(adata.layers.keys()):
+    del adata.layers[_lyr]
+gc.collect()
+debuginfoStr('Graph objects and adata layers freed')
+
 gnn.to(device)
 
 
@@ -508,6 +525,7 @@ for epoch in range(nb_epochs):
         del gnn_input
         if device.type == 'cuda':
             torch.cuda.empty_cache()
+        gc.collect()  # FIX 3: prompt Python GC to release freed tensors between patients
 
     epoch_contrastive /= len(train_graphs)
     epoch_classification /= len(train_graphs)
@@ -566,6 +584,7 @@ for epoch in range(nb_epochs):
             del gnn_input
             if device.type == 'cuda':
                 torch.cuda.empty_cache()
+            gc.collect()
 
     val_contrastive /= len(val_graphs)
     val_classification /= len(val_graphs)
@@ -732,5 +751,6 @@ for patient in all_graphs:
     del gnn_input
     if device.type == 'cuda':
         torch.cuda.empty_cache()
+    gc.collect()
 
 print("Saved embeddings and attention scores for all patients")
