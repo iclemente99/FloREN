@@ -90,6 +90,8 @@ parser.add_argument('--optimizer', type=str, default='adamw', help='Optimizer')
 parser.add_argument('--test_size', type=float, default=0.2, help='Fraction of data for test set')
 parser.add_argument('--val_size', type=float, default=0.2, help='Fraction of data for validation set')
 parser.add_argument('--patience', type=int, default=30, help='Epochs without val improvement before early stop')
+parser.add_argument('--resume', action='store_true',
+                    help='Resume training from checkpoint_latest.pt saved in model_dir')
 
 # Data directories
 parser.add_argument('--data_path', default='./data/', type=str, help='Path to FloREN data')
@@ -258,6 +260,8 @@ os.makedirs(att_dir, exist_ok=True)
 os.makedirs(loss_dir, exist_ok=True)
 os.makedirs(inter_dir, exist_ok=True)
 
+checkpoint_path = os.path.join(model_dir, 'checkpoint_latest.pt')
+
 ################################################################
 #
 # TRAIN / VAL / TEST SPLIT
@@ -354,6 +358,25 @@ validation_losses = []
 contrastive_losses = []
 classification_losses = []
 total_losses = []
+
+start_epoch = 0
+best_model_path = None   # set when a new best is saved; persisted in checkpoint
+if args.resume:
+    if not os.path.exists(checkpoint_path):
+        raise FileNotFoundError(f"--resume set but no checkpoint found at {checkpoint_path}")
+    ckpt = torch.load(checkpoint_path, map_location=device)
+    gnn.load_state_dict(ckpt['gnn_state'])
+    optimizer.load_state_dict(ckpt['optimizer_state'])
+    scheduler.load_state_dict(ckpt['scheduler_state'])
+    start_epoch           = ckpt['epoch'] + 1
+    best_model_loss       = ckpt['best_model_loss']
+    best_model_path       = ckpt.get('best_model_path')
+    counter               = ckpt['counter']
+    training_losses       = ckpt['training_losses']
+    validation_losses     = ckpt['validation_losses']
+    contrastive_losses    = ckpt['contrastive_losses']
+    classification_losses = ckpt['classification_losses']
+    print(f"Resumed from epoch {start_epoch} | Best val loss so far: {best_model_loss:.4f}")
 
 ################################################################
 #
@@ -479,7 +502,7 @@ def get_memory_usage():
 
 print("\nSTARTING FLOREN TRAINING")
 loop_start = time.time()
-for epoch in range(nb_epochs):
+for epoch in range(start_epoch, nb_epochs):
     epoch_start = time.time()
     gnn.train()
     random.shuffle(train_graphs)
@@ -605,18 +628,34 @@ for epoch in range(nb_epochs):
     if val_total < best_model_loss:
         best_model_loss = val_total
         counter = 0
+        best_model_path = os.path.join(model_dir, model0)
         state = {
             'model': gnn.state_dict(),
             'optimizer': scheduler.state_dict(),
             'epoch': epoch
         }
         os.makedirs(model_dir, exist_ok=True)
-        torch.save(state, os.path.join(model_dir, model0))
+        torch.save(state, best_model_path)
     else:
         counter += 1
         if counter >= patience:
             print(f"Early stopping at epoch {epoch + 1}. Best val loss: {best_model_loss:.6f}")
             break
+
+    # Save latest checkpoint so training can be resumed if killed
+    torch.save({
+        'epoch':               epoch,
+        'gnn_state':           gnn.state_dict(),
+        'optimizer_state':     optimizer.state_dict(),
+        'scheduler_state':     scheduler.state_dict(),
+        'best_model_loss':     best_model_loss,
+        'best_model_path':     best_model_path,
+        'counter':             counter,
+        'training_losses':     training_losses,
+        'validation_losses':   validation_losses,
+        'contrastive_losses':  contrastive_losses,
+        'classification_losses': classification_losses,
+    }, checkpoint_path)
 
 # Save loss history
 loss_history = pd.DataFrame({
@@ -648,17 +687,23 @@ torch.save(state, model_dir + final_model0)
 gene_dir       = args.result_dir + '/floren_gene_embeddings/'
 cell_dir       = args.result_dir + '/floren_cell_embeddings/'
 att_dir        = args.result_dir + '/floren_attention_embeddings/'
-patient_emb_dir      = args.result_dir + '/floren_patient_embeddings/'
-patient_emb_dir_split = args.result_dir + '/floren_patient_embeddings/split/'
+patient_emb_dir       = args.result_dir + '/floren_patient_embeddings/'
+patient_emb_dir_split    = args.result_dir + '/floren_patient_embeddings/split/'
+patient_emb_dir_patients = args.result_dir + '/floren_patient_embeddings/patients/'
+patient_emb_dir_layers   = args.result_dir + '/floren_patient_embeddings/layers/'
 os.makedirs(gene_dir, exist_ok=True)
 os.makedirs(cell_dir, exist_ok=True)
 os.makedirs(att_dir, exist_ok=True)
 os.makedirs(patient_emb_dir, exist_ok=True)
 os.makedirs(patient_emb_dir_split, exist_ok=True)
+os.makedirs(patient_emb_dir_patients, exist_ok=True)
+os.makedirs(patient_emb_dir_layers, exist_ok=True)
 
-# Load best saved model
-state = torch.load(os.path.join(model_dir, model0), map_location=lambda storage, loc: storage)
-print(f"Loaded best model from {os.path.join(model_dir, model0)}")
+# Load best saved model (use tracked path so resume runs find the original best)
+_best_path = best_model_path if best_model_path and os.path.exists(best_model_path) \
+             else os.path.join(model_dir, model0)
+state = torch.load(_best_path, map_location=lambda storage, loc: storage)
+print(f"Loaded best model from {_best_path}")
 
 # Re-instantiate GNN with the same in_dim used during training (h_n)
 gnn = GNN(
@@ -677,6 +722,8 @@ gnn.load_state_dict(state['model'])
 gnn.eval()
 
 all_graphs = train_graphs + val_graphs + test_graphs
+
+_layer_accum = {n: {} for n in ['ssl', 'g32', 'l32', 'g64', 'l64', 'g128', 'l128', 'class']}
 
 print("\nSAVING PATIENT REPRESENTATIONS")
 for patient in all_graphs:
@@ -735,7 +782,7 @@ for patient in all_graphs:
     pd.DataFrame(cells_grad, index=adata_subset.obs_names).to_csv(
         os.path.join(patient_out, "cells_atts.csv"))
 
-    # Save patient embedding components
+    # Save per-patient split components (one file per layer per patient)
     np.savetxt(os.path.join(patient_emb_dir_split, f"{patient_name}_emb_ssl.csv"),  emb_nhid, delimiter=",")
     np.savetxt(os.path.join(patient_emb_dir_split, f"{patient_name}_emb_g32.csv"),  g_32,     delimiter=",")
     np.savetxt(os.path.join(patient_emb_dir_split, f"{patient_name}_emb_l32.csv"),  l_32,     delimiter=",")
@@ -745,6 +792,20 @@ for patient in all_graphs:
     np.savetxt(os.path.join(patient_emb_dir_split, f"{patient_name}_emb_l128.csv"), l_128,    delimiter=",")
     np.savetxt(os.path.join(patient_emb_dir_split, f"{patient_name}_emb_class.csv"), _t2np(ret_class), delimiter=",")
 
+    # Save concatenated embedding per patient in /patients/
+    np.savetxt(os.path.join(patient_emb_dir_patients, f"{patient_name}.csv"), patient_embedding, delimiter=",")
+
+    # Accumulate layer vectors for the /layers/ CSVs (rows=patients, cols=dims)
+    _layer_accum['ssl'][patient_name]   = emb_nhid.flatten()
+    _layer_accum['g32'][patient_name]   = g_32.flatten()
+    _layer_accum['l32'][patient_name]   = l_32.flatten()
+    _layer_accum['g64'][patient_name]   = g_64.flatten()
+    _layer_accum['l64'][patient_name]   = l_64.flatten()
+    _layer_accum['g128'][patient_name]  = g_128.flatten()
+    _layer_accum['l128'][patient_name]  = l_128.flatten()
+    _layer_accum['class'][patient_name] = _t2np(ret_class).flatten()
+
+    # Keep legacy flat file in root for backwards compatibility
     file_name = f'sample_{patient_name}_epoch_{args.epochs}_n_hid_{args.n_hid}_nheads_{args.n_heads}_lr_01_n_batch{args.n_batch}'
     np.savetxt(os.path.join(patient_emb_dir, f"{file_name}.csv"), patient_embedding, delimiter=",")
 
@@ -754,3 +815,10 @@ for patient in all_graphs:
     gc.collect()
 
 print("Saved embeddings and attention scores for all patients")
+
+# Save /layers/ CSVs: one file per layer, rows=patients, columns=embedding dims
+for _lname, _rows in _layer_accum.items():
+    _df = pd.DataFrame(_rows).T   # patients × dims
+    _df.index.name = 'patient'
+    _df.to_csv(os.path.join(patient_emb_dir_layers, f"layer_{_lname}.csv"))
+print(f"Saved per-layer patient matrices → {patient_emb_dir_layers}")

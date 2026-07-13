@@ -105,6 +105,25 @@ python src/floren_training.py \
   --min_count      0
 ```
 
+#### Resuming a killed or interrupted run
+
+FloREN saves a `checkpoint_latest.pt` at the end of every epoch inside `./floren_output/model/`. If the job is killed (e.g. SLURM OOM or time limit), you can resume exactly where it stopped:
+
+```bash
+python src/floren_training.py \
+  --adata_path     './data/binvignat_example.h5ad' \
+  --result_dir     './floren_output/' \
+  --epochs         100 \
+  --patient_id     "patient_id" \
+  --metadata_group "disease" \
+  --min_count      0 \
+  --resume
+```
+
+The `--resume` flag restores the model weights, optimizer state, learning-rate scheduler, early-stopping counter, and full loss history. Training continues from the epoch after the last completed one. The best-model file is tracked inside the checkpoint, so the correct weights are always used for inference regardless of how many times the run is resumed.
+
+> **Note for SLURM users**: add `--resume` to your job script and submit the same job again after a failure — no other changes are needed.
+
 ### Step 3: Visualize Results
 
 Generates UMAP embeddings and attention plots from the trained model.
@@ -287,6 +306,31 @@ immune_network_plot(
 ```
 
 Node color and size both encode saliency (blue = low → red = high); edge width encodes attention weight. The PDF is self-contained and publication-ready.
+
+---
+
+---
+
+## 🐍 Python Script Example
+
+If you prefer to run the pipeline from a Python script rather than the terminal, a ready-to-use example is provided at [`examples/run_floren.py`](examples/run_floren.py).
+
+```bash
+# run from the repository root
+python examples/run_floren.py
+```
+
+The script calls Steps 1–3 via `subprocess` (same as the terminal commands above), then imports `downstream.py` functions directly and runs all four downstream analyses. Edit the configuration block at the top to point to your dataset:
+
+```python
+DATA           = "./data/your_dataset.h5ad"
+OUTPUT         = "./floren_output"
+PATIENT_ID     = "patient_id"
+METADATA_GROUP = "disease"
+GNN_EPOCHS     = 100
+```
+
+A commented-out `--resume` block is included for restarting interrupted runs.
 
 ---
 

@@ -98,12 +98,14 @@ class GNN(nn.Module):
 
     def forward_one(self, node_feature, node_type, edge_time, edge_index, edge_type):
         # type-specific projection
-        res = torch.zeros(node_feature.size(0), self.n_hid).to(node_feature.device)
+        # res stays float32; .to(res.dtype) after each linear prevents a mismatch
+        # when torch.autocast is active on CUDA (linear output becomes float16).
+        res = torch.zeros(node_feature.size(0), self.n_hid, device=node_feature.device)
         for t_id in range(self.num_types):
             idx = (node_type == int(t_id))
             if idx.sum() == 0:
                 continue
-            res[idx] = self.adapt_ws[t_id](node_feature[idx])
+            res[idx] = self.adapt_ws[t_id](node_feature[idx]).to(res.dtype)
 
         meta_xs = self.drop(res)
         del res

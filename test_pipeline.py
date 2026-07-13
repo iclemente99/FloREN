@@ -366,6 +366,29 @@ else:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# STEP 2b — Resume training  (checkpoint recovery test)
+# ──────────────────────────────────────────────────────────────────────────────
+if cli.skip_step2:
+    print("\nStep 2b skipped (--skip-step2).")
+else:
+    run_subprocess(
+        "Step 2b — floren_training.py resume (1 extra epoch from checkpoint)",
+        [PYTHON, "src/floren_training.py",
+         "--adata_path",     str(DATA_DIR / "binvignat_example.h5ad"),
+         "--cell_comm_path", str(DATA_DIR / "cell_connections"),
+         "--output_path",    str(OUTPUT_DIR),
+         "--result_dir",     str(OUTPUT_DIR),
+         "--epochs",         str(GNN_EPOCHS + 1),   # one more than Step 2
+         "--patient_id",     "patient_id",
+         "--metadata_group", "disease",
+         "--cuda",           str(cli.cuda),
+         "--min_count",      "0",
+         "--resume",
+         ],
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # STEP 3 — Visualization  (floren_visualization.py)
 # ──────────────────────────────────────────────────────────────────────────────
 if cli.skip_step3:
