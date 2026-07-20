@@ -338,6 +338,8 @@ A commented-out `--resume` block is included for restarting interrupted runs.
 
 This work was developed at LBAI-UBO. Please cite accordingly if used in academic research.
 
+> Inigo Clemente-Larramendi, Sophie Hillion, Divi Cornec, Christophe Jamin, Nathan Foulquier. FloREN: Decoding Immune Regulatory Networks through Interpretable Graph Transformer Patient Representations. bioRxiv. https://doi.org/10.64898/2026.07.12.738088 (2026)
+
 ## 🖥️ Maintainers
 
 Iñigo Clemente Larramendi — inigo.clementelarramendi@univ-brest.fr
